@@ -148,7 +148,44 @@ verbatim from what the platform actually sends.
 
 ---
 
-## 6. Device requirements read as contradictory for a developer with no hardware
+## 6. History pagination is not documented at all
+
+**Task.** Read a household's past events, so that a baseline exists on the day
+the product is installed rather than a month later.
+
+**Expected.** The history endpoint documented with its query parameters and its
+pagination scheme, since history is by definition larger than one response.
+
+**What happened.** `GET /v1/history/devices/{device_id}/events` is listed with a
+one line description and nothing else. No date range parameters, no limit, no
+cursor, no example of a paginated reply, no statement of the maximum page size.
+The device list endpoint by contrast does document its `?include=` options,
+which makes the omission look accidental rather than deliberate.
+
+The consequence is worse than inconvenience. Without knowing the pagination
+scheme, an integrator cannot tell the difference between "this household has
+forty events" and "this household has four thousand events and I read the first
+page". For a product whose entire job is judging how much activity is normal,
+silently reading one page of history would produce a baseline that is wrong in
+the dangerous direction: too little history looks like a quiet person, and a
+quiet baseline hides a real emergency.
+
+**Severity.** High. It is the difference between a correct baseline and a
+confidently wrong one.
+
+**Workaround.** Follow the JSON:API `links.next` convention when a reply offers
+it, stop cleanly when it does not, refuse to follow a link pointing at any host
+other than Ring's own API, and cap the number of pages so a malformed or
+looping reply cannot run forever. Report how many days of history were actually
+retrieved, so a human can see whether it looks plausible.
+
+**What would have helped.** One paragraph and one example response. State the
+page size, the parameter names for a date range, and whether pagination is by
+cursor or by link.
+
+---
+
+## 7. Device requirements read as contradictory for a developer with no hardware
 
 **Task.** Decide whether the project was possible without owning a Ring device.
 

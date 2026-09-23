@@ -32,7 +32,7 @@ leaving. The same stretch with no transit event is someone who stopped.
 | Notifications, with Amazon SNS delivery | done, first live send when AWS credits land |
 | Event store, SQLite or Postgres | done |
 | Ring adapter, webhook and account linking | done, awaiting a deployed HTTPS address |
-| History backfill on first link | next |
+| History backfill on first link | done |
 
 ## The learner
 

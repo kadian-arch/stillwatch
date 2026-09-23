@@ -21,10 +21,12 @@ from stillwatch.ring import (
     classify,
     device_from_ring,
     normalise_many,
+    next_link,
     normalise_ring,
     sign,
     verify_signature,
 )
+from stillwatch.backfill import backfill, client_from_store
 from stillwatch.service import LiveSource, create_app
 from stillwatch.store import EventStore, PostgresDialect, SqliteDialect, dialect_for
 
@@ -455,6 +457,127 @@ def test_live_day():
           second["today"]["kitchen"] != day["today"]["kitchen"] or len(second["readings"]) >= first)
 
 
+class PagedRing:
+    """Ring with several pages of history and one camera that errors."""
+
+    def __init__(self, pages=2, broken=None, next_host="api.amazonvision.com"):
+        self.calls = []
+        self.pages = pages
+        self.broken = broken or set()
+        self.next_host = next_host
+
+    def __call__(self, method, url, payload):
+        self.calls.append((method, url, payload))
+        if method == "POST":
+            return {"access_token": "t", "refresh_token": "r", "expires_in": 14400}
+        if "/devices?" in url or url.endswith("/devices"):
+            return {"data": [
+                {"id": "front_door", "attributes": {"name": "Front Door"}},
+                {"id": "kitchen", "attributes": {"name": "Kitchen"}},
+                {"id": "landing", "attributes": {"name": "Landing"}},
+            ]}
+
+        device = url.split("/devices/")[1].split("/")[0]
+        if device in self.broken:
+            raise RingError("500 from Ring")
+
+        page = 2 if "page=2" in url else 1
+        events = [{
+            "id": "%s-p%d-%d" % (device, page, index),
+            "device_id": device,
+            "event_type": "motion_detected",
+            "created_at": "2026-09-%02dT%02d:00:00Z" % (10 + page, 8 + index),
+        } for index in range(2)]
+
+        body = {"data": events}
+        if page < self.pages:
+            body["links"] = {"next": "https://%s/v1/history/devices/%s/events?page=2"
+                             % (self.next_host, device)}
+        return body
+
+
+def test_backfill():
+    section("reading the past out of Ring")
+    store = EventStore()
+    fake = PagedRing()
+    client = RingClient("id", "secret", refresh_token="r", transport=fake)
+
+    report = backfill(client, store, days=30)
+    check("every device is found", report.devices == 3, str(report.devices))
+    check("their names and classes are stored",
+          store.roster().is_transit("front_door") and store.roster().is_interior("kitchen"))
+    check("both pages are followed", report.per_device["kitchen"] == 4,
+          str(report.per_device))
+    check("everything read was new", report.stored == report.fetched == 12,
+          "%d fetched, %d stored" % (report.fetched, report.stored))
+    check("the store holds it", store.count() == 12, str(store.count()))
+    check("the span of history is reported", report.span_days() > 0, str(report.span_days()))
+    check("it reports success", report.ok)
+
+    again = backfill(client, store, days=30)
+    check("running it twice reads the same events", again.fetched == 12)
+    check("but stores none of them again", again.stored == 0, str(again.stored))
+    check("the store has not grown", store.count() == 12)
+
+    check("the history call asks the documented endpoint",
+          any("/v1/history/devices/kitchen/events" in call[1] for call in fake.calls))
+    check("the device list asks the documented endpoint",
+          any(call[1].startswith("https://api.amazonvision.com/v1/devices") for call in fake.calls))
+    check("a since filter is sent", any("since=" in call[1] for call in fake.calls))
+    check("the refreshed token is kept for next time", store.is_linked())
+
+
+def test_backfill_survives_a_broken_camera():
+    section("one camera fails, the rest still load")
+    store = EventStore()
+    client = RingClient("id", "secret", refresh_token="r",
+                        transport=PagedRing(broken={"kitchen"}))
+
+    report = backfill(client, store, days=30)
+    check("the failure is reported", not report.ok and len(report.failures) == 1,
+          str(report.failures))
+    check("it names the camera that failed", report.failures[0][0] == "kitchen")
+    check("the other two still loaded", report.fetched == 8, str(report.fetched))
+    check("and their events are stored", store.count() == 8)
+    check("the broken one contributed nothing", "kitchen" not in report.per_device)
+    check("the summary mentions the failure", "kitchen" in report.summary())
+
+
+def test_backfill_will_not_follow_a_link_elsewhere():
+    """A next link is data from the network, not an instruction."""
+    section("pagination links are not followed off Ring")
+    check("a link to another host is refused",
+          next_link({"links": {"next": "https://evil.example/v1/history"}}) is None)
+    check("a link on Ring is followed",
+          next_link({"links": {"next": "https://api.amazonvision.com/v1/x"}})
+          == "https://api.amazonvision.com/v1/x")
+    check("plain http is refused",
+          next_link({"links": {"next": "http://api.amazonvision.com/v1/x"}}) is None)
+    check("a reply with no links ends the paging", next_link({"data": []}) is None)
+
+    store = EventStore()
+    client = RingClient("id", "secret", refresh_token="r",
+                        transport=PagedRing(next_host="evil.example"))
+    report = backfill(client, store, days=30)
+    check("so a hostile next link stops the paging instead of being fetched",
+          report.fetched == 6, str(report.fetched))
+
+
+def test_backfill_needs_a_linked_home():
+    section("backfill before linking")
+    store = EventStore()
+    env = {"STILLWATCH_RING_CLIENT_ID": "id", "STILLWATCH_RING_CLIENT_SECRET": "secret"}
+    check("it refuses when no home is linked",
+          raises(lambda: client_from_store(store, env)))
+
+    store.save_tokens("default", "access", "refresh", moment(9))
+    client = client_from_store(store, env)
+    check("once linked it carries the stored refresh token", client.refresh_token == "refresh")
+    check("and the access token", client.access_token == "access")
+    check("it refuses without app credentials",
+          raises(lambda: client_from_store(store, {})))
+
+
 def test_account_linking():
     section("account linking")
     store = EventStore()
@@ -522,6 +645,10 @@ def main():
         test_webhook,
         test_webhook_without_a_secret,
         test_live_day,
+        test_backfill,
+        test_backfill_survives_a_broken_camera,
+        test_backfill_will_not_follow_a_link_elsewhere,
+        test_backfill_needs_a_linked_home,
         test_account_linking,
         test_token_endpoint_without_credentials,
     ):

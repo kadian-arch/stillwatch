@@ -29,6 +29,9 @@ SCOPE = "ava.v1:read"
 SIGNATURE_HEADER = "X-Signature"
 SIGNATURE_PREFIX = "sha256="
 
+# Pagination is undocumented, so there is a hard stop rather than a promise.
+MAX_HISTORY_PAGES = 50
+
 # Ring event types, mapped onto what the engine reasons about. Anything absent
 # from this table is ignored on purpose rather than by accident.
 KINDS = {
@@ -138,6 +141,32 @@ def normalise_many(payload):
         if event is not None:
             events.append(event)
     return events
+
+
+def next_link(payload):
+    """The next page, if the reply offers one.
+
+    Only an address on Ring's own API is followed. A next link is data from
+    the network, and following it anywhere it points would let a compromised
+    or mistaken reply send our access token to somebody else.
+    """
+    if not isinstance(payload, dict):
+        return None
+    candidates = []
+    links = payload.get("links")
+    if isinstance(links, dict):
+        candidates.append(links.get("next"))
+    meta = payload.get("meta")
+    if isinstance(meta, dict):
+        candidates.extend([meta.get("next"), meta.get("next_url")])
+
+    for candidate in candidates:
+        if not candidate or not isinstance(candidate, str):
+            continue
+        parsed = urllib.parse.urlparse(candidate)
+        if parsed.scheme == "https" and parsed.netloc == urllib.parse.urlparse(API_BASE).netloc:
+            return candidate
+    return None
 
 
 def device_from_ring(payload):
@@ -251,16 +280,54 @@ class RingClient:
             return self.access_token
         return self.refresh()
 
-    def history(self, device_id, since=None, limit=None):
-        query = {}
-        if since is not None:
-            query["since"] = since.isoformat()
-        if limit is not None:
-            query["limit"] = str(limit)
-        url = "%s/history/devices/%s/events" % (API_BASE, urllib.parse.quote(str(device_id)))
-        if query:
-            url += "?" + urllib.parse.urlencode(query)
-        return normalise_many(self._json(url, self.token()))
+    def devices(self):
+        """Every device on the linked account, classified by name."""
+        url = "%s/devices?include=status,location" % API_BASE
+        payload = self._json(url, self.token())
+        records = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(records, list):
+            records = [records] if records else []
+        found = []
+        for record in records:
+            try:
+                found.append(device_from_ring(record))
+            except RingError:
+                continue
+        return found
+
+    def history_page(self, device_id, since=None, limit=None, url=None):
+        """One page of history, and the address of the next one if there is one.
+
+        Pagination is not described in the documentation, so this follows the
+        JSON:API convention when it is offered and stops when it is not.
+        """
+        if url is None:
+            query = {}
+            if since is not None:
+                query["since"] = since.isoformat()
+            if limit is not None:
+                query["limit"] = str(limit)
+            url = "%s/history/devices/%s/events" % (API_BASE, urllib.parse.quote(str(device_id)))
+            if query:
+                url += "?" + urllib.parse.urlencode(query)
+
+        payload = self._json(url, self.token())
+        return normalise_many(payload), next_link(payload)
+
+    def history(self, device_id, since=None, limit=None, max_pages=MAX_HISTORY_PAGES):
+        """Every event we are offered for a device, oldest first."""
+        events = []
+        seen_urls = set()
+        url = None
+        for _ in range(max_pages):
+            page, following = self.history_page(device_id, since=since, limit=limit, url=url)
+            events.extend(page)
+            if not following or following in seen_urls:
+                break
+            seen_urls.add(following)
+            url = following
+        events.sort(key=lambda event: event.at)
+        return events
 
     def subscriptions(self):
         return self._json("%s/accounts/me/subscriptions" % API_BASE, self.token())

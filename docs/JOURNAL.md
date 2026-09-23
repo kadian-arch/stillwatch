@@ -216,4 +216,31 @@ is, because today keeps happening.
 
 ---
 
+## Wed 23 Sep 2026
+
+### History backfill
+
+The moment an account is linked, Stillwatch asks Ring for everything it already
+holds, so the first useful judgement comes on day one rather than in November.
+A baseline needs weeks of history and nobody will wait weeks after installing.
+
+**One failing camera must not cost the others.** A household where the porch
+camera errors should still learn its kitchen. Each device is fetched
+independently and failures are collected into the report rather than raised.
+
+**A pagination link is data, not an instruction.** Ring does not document how
+history pages, so the client follows the JSON:API `next` convention when it is
+offered, and refuses any link pointing at a host other than Ring's own API.
+Following one blindly would send our access token wherever the reply said.
+There is a test that serves a link to another host and proves the paging stops
+instead of fetching it.
+
+**Reading history twice stores nothing twice.** The store is idempotent on the
+event id, so a repeated backfill is safe, which matters because it will be run
+again whenever we suspect a gap.
+
+389 checks across seven suites.
+
+---
+
 The Ring developer friction log lives in [FRICTION_LOG.md](FRICTION_LOG.md).

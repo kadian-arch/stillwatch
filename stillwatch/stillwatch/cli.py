@@ -177,6 +177,35 @@ def cmd_ingest(args):
     return 0
 
 
+def cmd_backfill(args):
+    from .backfill import backfill, client_from_store
+    from .ring import RingError
+    from .store import EventStore
+
+    store = EventStore(args.db)
+    try:
+        client = client_from_store(store)
+    except RingError as error:
+        print("cannot reach Ring: %s" % error, file=sys.stderr)
+        print("set STILLWATCH_RING_CLIENT_ID and STILLWATCH_RING_CLIENT_SECRET,"
+              " and link the home first", file=sys.stderr)
+        return 1
+
+    print("reading history from Ring, %d days back" % args.days)
+    report = backfill(
+        client, store, days=args.days,
+        on_progress=lambda device, read, new: print(
+            "  %-16s %4d read, %4d new" % (device.name, read, new)),
+    )
+    print()
+    print(report.summary())
+    print()
+    print("the store now holds %d events across %d devices"
+          % (store.count(), len(store.roster())))
+    store.close()
+    return 0 if report.ok else 1
+
+
 def cmd_serve(args):
     try:
         from .service import LiveSource, ReplaySource, create_app
@@ -245,6 +274,12 @@ def build_parser():
     loader.add_argument("--end-now", action="store_true", dest="end_now",
                         help="Shift the history so it ends at the present moment.")
     loader.set_defaults(handler=cmd_ingest)
+
+    filler = commands.add_parser("backfill", help="Read past events from Ring into the store.")
+    filler.add_argument("--db", default="events.db")
+    filler.add_argument("--days", type=int, default=30,
+                        help="How far back to ask for. Defaults to 30 days.")
+    filler.set_defaults(handler=cmd_backfill)
 
     server = commands.add_parser("serve", help="Run the dashboard.")
     server.add_argument("--data", default="data", help="Folder holding the replay files.")
