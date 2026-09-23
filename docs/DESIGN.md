@@ -72,8 +72,7 @@ deviation from this specific person's habit rather than from an average.
 
 ## Why this is deliberately not a neural network
 
-We could train a sequence model. We are not going to, and the reason belongs in
-the submission.
+A sequence model would be the obvious choice, and it is the wrong one here.
 
 A caregiver woken at 3am needs to know why their phone went off. "No movement in
 the kitchen since 19:20, and she is normally active there until 22:00 on a

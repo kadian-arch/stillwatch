@@ -46,7 +46,7 @@ start. That distinction is the product.
 |---|---|
 | [`stillwatch/`](stillwatch/) | The service: learner, monitor, notifications, dashboard, Ring adapter |
 | [`ring-event-simulator/`](ring-event-simulator/) | Standalone event simulator, MIT, also published on its own |
-| [`docs/`](docs/) | Design, build journal and the developer friction log |
+| [`docs/`](docs/) | Design, the decisions behind it, deployment, and the developer friction log |
 | `check.py` | Runs every test suite |
 | `demo_data.py` | Generates the replay days |
 
@@ -108,7 +108,7 @@ Built for **Build, Ship, Shape: Amazon Developer Hackathon**.
 | Mini challenge | AWS Builder, through Amazon SNS for caregiver notifications |
 | Mini challenge | Open Source, through [ring-event-simulator](ring-event-simulator/) |
 | Developer feedback | [docs/FRICTION_LOG.md](docs/FRICTION_LOG.md) |
-| How it was built, and why | [docs/DESIGN.md](docs/DESIGN.md), [docs/JOURNAL.md](docs/JOURNAL.md) |
+| How it was built, and why | [docs/DESIGN.md](docs/DESIGN.md), [docs/DECISIONS.md](docs/DECISIONS.md) |
 
 The friction log records the Ring developer experience as it happened, with
 severity and suggested fixes for each problem encountered.
