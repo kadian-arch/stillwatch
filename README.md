@@ -91,6 +91,21 @@ at an empty house, and a camera that dies while the person is fine.
 Ring's words are translated in exactly one place, which is why the same engine
 runs against the simulator and against real hardware without changing.
 
+## Hackathon submission
+
+Built for **Build, Ship, Shape: Amazon Developer Hackathon**.
+
+| | |
+|---|---|
+| Track | Ring |
+| Mini challenge | AWS Builder, through Amazon SNS for caregiver notifications |
+| Mini challenge | Open Source, through [ring-event-simulator](ring-event-simulator/) |
+| Developer feedback | [docs/FRICTION_LOG.md](docs/FRICTION_LOG.md) |
+| How it was built, and why | [docs/DESIGN.md](docs/DESIGN.md), [docs/JOURNAL.md](docs/JOURNAL.md) |
+
+The friction log records the Ring developer experience as it happened, with
+severity and suggested fixes for each problem encountered.
+
 ## Licence
 
 Apache 2.0. See [LICENSE](LICENSE).

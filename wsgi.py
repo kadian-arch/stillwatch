@@ -2,6 +2,7 @@
 
 Configuration comes from the environment, never from a file in the repository:
 
+
     STILLWATCH_RING_CLIENT_ID          from the Ring developer console
     STILLWATCH_RING_CLIENT_SECRET      from the Ring developer console
     STILLWATCH_RING_WEBHOOK_SECRET     the HMAC signature key, shown once
