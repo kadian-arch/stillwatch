@@ -1,7 +1,5 @@
 # Stillwatch: design
 
-Ring track. Caretaking. Solo build, deadline 23 Oct 2026.
-
 ## The problem
 
 Every home monitoring product alerts on events. Motion detected. Doorbell
