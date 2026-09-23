@@ -30,7 +30,9 @@ leaving. The same stretch with no transit event is someone who stopped.
 | Silence monitor and state ladder | done |
 | Dashboard | done |
 | Notifications, with Amazon SNS delivery | done, first live send when AWS credits land |
-| Ring ingestion | when access lands |
+| Event store, SQLite or Postgres | done |
+| Ring adapter, webhook and account linking | done, awaiting a deployed HTTPS address |
+| History backfill on first link | next |
 
 ## The learner
 

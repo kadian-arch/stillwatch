@@ -26,7 +26,7 @@ from stillwatch.ring import (
     verify_signature,
 )
 from stillwatch.service import LiveSource, create_app
-from stillwatch.store import EventStore
+from stillwatch.store import EventStore, PostgresDialect, SqliteDialect, dialect_for
 
 SECRET = "hmac-key-from-the-portal"
 
@@ -93,6 +93,95 @@ def test_store():
     store.remember_device(Device("kitchen", "Kitchen Camera", INTERIOR))
     check("a device can be renamed", store.roster().name("kitchen") == "Kitchen Camera")
     check("renaming does not duplicate it", len(store.roster()) == 2)
+
+
+class RecordingCursor:
+    def __init__(self, log):
+        self.log = log
+        self.rowcount = 1
+
+    def execute(self, statement, values=()):
+        self.log.append(statement)
+
+    def fetchall(self):
+        return []
+
+    def close(self):
+        pass
+
+
+class RecordingConnection:
+    def __init__(self):
+        self.statements = []
+        self.commits = 0
+
+    def cursor(self):
+        return RecordingCursor(self.statements)
+
+    def commit(self):
+        self.commits += 1
+
+    def close(self):
+        pass
+
+
+class RecordingDialect:
+    """Stands in for Postgres, so the SQL we would send can be inspected."""
+
+    name = "postgres"
+    placeholder = "%s"
+
+    def __init__(self):
+        self.connection = RecordingConnection()
+
+    def connect(self, target):
+        return self.connection
+
+    def row(self, cursor, values):
+        return values
+
+
+def test_both_databases():
+    section("the store speaks both dialects")
+    check("a Heroku database URL chooses Postgres",
+          isinstance(dialect_for("postgres://user:pw@host/db"), PostgresDialect))
+    check("the longer spelling does too",
+          isinstance(dialect_for("postgresql://user:pw@host/db"), PostgresDialect))
+    check("a file path stays on SQLite", isinstance(dialect_for("events.db"), SqliteDialect))
+    check("so does memory", isinstance(dialect_for(":memory:"), SqliteDialect))
+
+    dialect = RecordingDialect()
+    store = EventStore("postgres://fake/db", dialect=dialect)
+    check("it reports which database it is on", store.kind == "postgres")
+
+    store.add_many([event("a", hour=8)])
+    store.remember_device(Device("kitchen", "Kitchen", INTERIOR))
+    store.save_tokens("default", "access", "refresh", moment(9))
+    sent = dialect.connection.statements
+
+    schema = " ".join(sent[:4])
+    for table in ("events", "devices", "tokens"):
+        check("the %s table is created" % table, "CREATE TABLE IF NOT EXISTS %s" % table in schema)
+
+    inserts = [line for line in sent if line.startswith("INSERT INTO events")]
+    check("events insert with the Postgres placeholder",
+          inserts and "%s" in inserts[0] and "?" not in inserts[0], inserts[0] if inserts else "")
+    check("a redelivery is ignored rather than failing",
+          "ON CONFLICT (event_id) DO NOTHING" in inserts[0])
+
+    devices = [line for line in sent if line.startswith("INSERT INTO devices")]
+    check("a device is upserted", "ON CONFLICT (device_id) DO UPDATE" in devices[0])
+    check("with Postgres placeholders", "?" not in devices[0])
+
+    tokens = [line for line in sent if line.startswith("INSERT INTO tokens")]
+    check("tokens are upserted", "ON CONFLICT (account) DO UPDATE" in tokens[0])
+    check("with Postgres placeholders", "?" not in tokens[0])
+    check("every write is committed", dialect.connection.commits >= 3)
+
+    sqlite_store = EventStore(":memory:")
+    check("on SQLite the same code uses question marks",
+          sqlite_store._sql("SELECT ?") == "SELECT ?")
+    check("on Postgres it uses percent s", store._sql("SELECT ?") == "SELECT %s")
 
 
 def test_store_survives_a_restart():
@@ -423,6 +512,7 @@ def test_token_endpoint_without_credentials():
 def main():
     for test in (
         test_store,
+        test_both_databases,
         test_store_survives_a_restart,
         test_ring_words,
         test_ring_shapes,

@@ -5,6 +5,12 @@ restart and the two sides never have to be running at the same time. Writes are
 idempotent on the event id, because Ring will redeliver a webhook it is not sure
 we received, and a duplicated motion event would shorten a silence that never
 actually broke.
+
+Two databases, one class. SQLite for a laptop, Postgres in production, because
+a hosted container's disk is wiped on every restart and a baseline needs weeks
+of history to mean anything. The SQL is written once and the only differences
+between the two, the placeholder character and how a connection is opened, live
+in the small dialect classes below.
 """
 
 from __future__ import annotations
@@ -16,72 +22,121 @@ from datetime import datetime, timezone
 
 from .model import Device, DeviceRoster, Event, INTERIOR, parse_timestamp
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS events (
-    event_id  TEXT PRIMARY KEY,
-    device_id TEXT NOT NULL,
-    kind      TEXT NOT NULL,
-    at        TEXT NOT NULL,
-    raw       TEXT
-);
-CREATE INDEX IF NOT EXISTS events_at ON events (at);
+STATEMENTS = (
+    """CREATE TABLE IF NOT EXISTS events (
+        event_id  TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        kind      TEXT NOT NULL,
+        at        TEXT NOT NULL,
+        raw       TEXT
+    )""",
+    "CREATE INDEX IF NOT EXISTS events_at ON events (at)",
+    """CREATE TABLE IF NOT EXISTS devices (
+        device_id  TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        zone_class TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS tokens (
+        account    TEXT PRIMARY KEY,
+        access     TEXT,
+        refresh    TEXT,
+        expires_at TEXT,
+        linked_at  TEXT
+    )""",
+)
 
-CREATE TABLE IF NOT EXISTS devices (
-    device_id  TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    zone_class TEXT NOT NULL
-);
+POSTGRES_PREFIXES = ("postgres://", "postgresql://")
 
-CREATE TABLE IF NOT EXISTS tokens (
-    account    TEXT PRIMARY KEY,
-    access     TEXT,
-    refresh    TEXT,
-    expires_at TEXT,
-    linked_at  TEXT
-);
-"""
+
+class SqliteDialect:
+    name = "sqlite"
+    placeholder = "?"
+
+    def connect(self, target):
+        connection = sqlite3.connect(target, check_same_thread=False)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def row(self, cursor, values):
+        return values
+
+
+class PostgresDialect:
+    name = "postgres"
+    placeholder = "%s"
+
+    def connect(self, target):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        return psycopg.connect(target, row_factory=dict_row, autocommit=False)
+
+    def row(self, cursor, values):
+        return values
+
+
+def dialect_for(target):
+    return PostgresDialect() if str(target).startswith(POSTGRES_PREFIXES) else SqliteDialect()
 
 
 class EventStore:
-    def __init__(self, path=":memory:"):
-        self.path = str(path)
+    def __init__(self, target=":memory:", dialect=None):
+        self.target = str(target)
+        self.dialect = dialect or dialect_for(self.target)
         self._lock = threading.Lock()
         # The webhook and the dashboard are different threads in one process.
-        self._db = sqlite3.connect(self.path, check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
+        self._db = self.dialect.connect(self.target)
         with self._lock:
-            self._db.executescript(SCHEMA)
+            for statement in STATEMENTS:
+                self._execute(statement)
             self._db.commit()
+
+    @property
+    def kind(self):
+        return self.dialect.name
 
     def close(self):
         self._db.close()
+
+    def _sql(self, statement):
+        return statement.replace("?", self.dialect.placeholder)
+
+    def _execute(self, statement, values=()):
+        cursor = self._db.cursor()
+        cursor.execute(self._sql(statement), values)
+        return cursor
+
+    def _fetchall(self, statement, values=()):
+        cursor = self._execute(statement, values)
+        rows = cursor.fetchall()
+        cursor.close()
+        return [dict(row) for row in rows]
 
     def add(self, event, raw=None):
         """True if this event was new, False if it was a redelivery."""
         return self.add_many([event], {event.event_id: raw} if raw else None) == 1
 
     def add_many(self, events, raws=None):
-        rows = [
-            (
-                event.event_id,
-                event.device_id,
-                event.kind,
-                event.at.isoformat(),
-                json.dumps((raws or {}).get(event.event_id)) if raws else None,
-            )
-            for event in events
-        ]
-        if not rows:
+        if not events:
             return 0
+        statement = (
+            "INSERT INTO events (event_id, device_id, kind, at, raw)"
+            " VALUES (?, ?, ?, ?, ?) ON CONFLICT (event_id) DO NOTHING"
+        )
+        stored = 0
         with self._lock:
-            before = self._db.total_changes
-            self._db.executemany(
-                "INSERT OR IGNORE INTO events (event_id, device_id, kind, at, raw)"
-                " VALUES (?, ?, ?, ?, ?)",
-                rows,
-            )
+            for event in events:
+                cursor = self._execute(statement, (
+                    event.event_id,
+                    event.device_id,
+                    event.kind,
+                    event.at.isoformat(),
+                    json.dumps((raws or {}).get(event.event_id)) if raws else None,
+                ))
+                stored += max(0, cursor.rowcount)
+                cursor.close()
             self._db.commit()
-            return self._db.total_changes - before
+        return stored
 
     def events(self, since=None, until=None):
         clauses, values = [], []
@@ -93,10 +148,10 @@ class EventStore:
             values.append(until.isoformat())
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         with self._lock:
-            rows = self._db.execute(
+            rows = self._fetchall(
                 "SELECT event_id, device_id, kind, at FROM events%s ORDER BY at" % where,
-                values,
-            ).fetchall()
+                tuple(values),
+            )
         return [
             Event(event_id=row["event_id"], device_id=row["device_id"],
                   kind=row["kind"], at=parse_timestamp(row["at"]))
@@ -105,21 +160,22 @@ class EventStore:
 
     def count(self):
         with self._lock:
-            return self._db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            return self._fetchall("SELECT COUNT(*) AS total FROM events")[0]["total"]
 
     def last_event_at(self):
         with self._lock:
-            row = self._db.execute("SELECT MAX(at) FROM events").fetchone()
-        return parse_timestamp(row[0]) if row and row[0] else None
+            rows = self._fetchall("SELECT MAX(at) AS latest FROM events")
+        latest = rows[0]["latest"] if rows else None
+        return parse_timestamp(latest) if latest else None
 
     def remember_device(self, device):
         with self._lock:
-            self._db.execute(
+            self._execute(
                 "INSERT INTO devices (device_id, name, zone_class) VALUES (?, ?, ?)"
-                " ON CONFLICT(device_id) DO UPDATE SET name = excluded.name,"
+                " ON CONFLICT (device_id) DO UPDATE SET name = excluded.name,"
                 " zone_class = excluded.zone_class",
                 (device.device_id, device.name, device.zone_class),
-            )
+            ).close()
             self._db.commit()
 
     def remember_devices(self, devices):
@@ -128,36 +184,37 @@ class EventStore:
 
     def roster(self):
         with self._lock:
-            rows = self._db.execute(
+            rows = self._fetchall(
                 "SELECT device_id, name, zone_class FROM devices ORDER BY zone_class, name"
-            ).fetchall()
+            )
         return DeviceRoster(
             Device(row["device_id"], row["name"], row["zone_class"]) for row in rows
         )
 
     def save_tokens(self, account, access, refresh, expires_at):
-        """Ring credentials live in the database, never in the repo or a file
-        that could be committed by accident."""
+        """Ring credentials live in the database, never in the repository or in
+        a file that could be committed by accident."""
         with self._lock:
-            self._db.execute(
+            self._execute(
                 "INSERT INTO tokens (account, access, refresh, expires_at, linked_at)"
                 " VALUES (?, ?, ?, ?, ?)"
-                " ON CONFLICT(account) DO UPDATE SET access = excluded.access,"
+                " ON CONFLICT (account) DO UPDATE SET access = excluded.access,"
                 " refresh = excluded.refresh, expires_at = excluded.expires_at",
                 (account, access, refresh,
                  expires_at.isoformat() if expires_at else None,
                  datetime.now(timezone.utc).isoformat()),
-            )
+            ).close()
             self._db.commit()
 
     def tokens(self, account="default"):
         with self._lock:
-            row = self._db.execute(
+            rows = self._fetchall(
                 "SELECT access, refresh, expires_at, linked_at FROM tokens WHERE account = ?",
                 (account,),
-            ).fetchone()
-        if not row:
+            )
+        if not rows:
             return None
+        row = rows[0]
         return {
             "access": row["access"],
             "refresh": row["refresh"],
