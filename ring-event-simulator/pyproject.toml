@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ring-event-simulator"
+version = "0.1.0"
+description = "Realistic Ring style event streams for building and testing inactivity detection"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Kum Donalsien Akwo" }]
+keywords = ["ring", "smart-home", "simulator", "testing", "events"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = []
+
+[project.scripts]
+ringsim = "ringsim.cli:main"
+
+[tool.setuptools]
+packages = ["ringsim"]

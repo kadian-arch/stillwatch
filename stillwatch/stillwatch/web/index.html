@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stillwatch</title>
+  <meta name="description" content="Watches for the silence. Inactivity detection for a person living alone.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2.2"/>
+          <path d="M9 17h4l2-5 3 9 2-4h3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="brand-text">
+          <span class="name">Stillwatch</span>
+          <span class="home" id="home">Loading</span>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>Day</span>
+          <select id="scenario"></select>
+        </label>
+        <label class="field">
+          <span>Compare</span>
+          <select id="compare">
+            <option value="">Nothing</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout" id="app" aria-busy="true">
+    <p class="empty" id="empty" hidden></p>
+
+    <section class="now" id="now" aria-live="polite" aria-label="Current judgement"></section>
+
+    <section class="card gauge-card" aria-labelledby="gauge-title">
+      <h2 id="gauge-title">Quiet so far</h2>
+      <div class="gauge" id="gauge"></div>
+      <p class="gauge-note" id="gaugeNote"></p>
+    </section>
+
+    <section class="card timeline" aria-label="Replay">
+      <div class="timeline-head">
+        <button type="button" class="play" id="play" aria-pressed="false">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path id="playIcon" d="M4 2.5v11l9-5.5z"/></svg>
+          <span id="playLabel">Play the day</span>
+        </button>
+        <label class="speed">
+          <span class="visually-hidden">Speed</span>
+          <select id="speed">
+            <option value="1">1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+          </select>
+        </label>
+        <output class="clock" id="clock">00:00</output>
+        <span class="day" id="dayLabel"></span>
+      </div>
+      <div class="strips" id="strips"></div>
+      <input type="range" id="time" min="0" max="287" step="1" value="72" aria-label="Time of day">
+      <div class="hours" aria-hidden="true">
+        <span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span>
+      </div>
+      <ul class="legend" aria-label="Legend">
+        <li><i data-state="NORMAL"></i>Normal</li>
+        <li><i data-state="QUIET"></i>Quiet</li>
+        <li><i data-state="CONCERN"></i>Concern</li>
+        <li><i data-state="ALERT"></i>Alert</li>
+        <li><i data-state="AWAY"></i>Out</li>
+        <li><i data-state="UNKNOWN"></i>Cannot tell</li>
+        <li><i class="tick"></i>Door</li>
+      </ul>
+    </section>
+
+    <section class="card messages-card" aria-labelledby="messages-title">
+      <h2 id="messages-title">Messages to her family</h2>
+      <div id="messages"></div>
+    </section>
+
+    <section class="card today-card" aria-labelledby="today-title">
+      <h2 id="today-title">Today against her normal</h2>
+      <div class="heat" id="heat"></div>
+      <p class="note">Shading is how often she is usually there at that hour. A dot means she was there today. Stripes mean the camera was offline.</p>
+    </section>
+
+    <section class="card habits-card" aria-labelledby="habits-title">
+      <h2 id="habits-title">Her habits</h2>
+      <ul class="anchors" id="anchors"></ul>
+      <p class="note" id="learnedFrom"></p>
+    </section>
+
+    <section class="card quiet-card" aria-labelledby="quiet-title">
+      <h2 id="quiet-title">Quiet she normally has</h2>
+      <div class="quietbars" id="quietbars"></div>
+      <div class="quietaxis" aria-hidden="true">
+        <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+      </div>
+      <p class="note">Longest stillness in a normal day, by the hour it starts. Long at night, short by day, and learned rather than set.</p>
+    </section>
+
+    <section class="card cameras-card" aria-labelledby="cameras-title">
+      <h2 id="cameras-title">Cameras</h2>
+      <ul class="devices" id="devices"></ul>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p id="footnote">Replaying simulated data. Times are the household's own clock.</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
