@@ -241,6 +241,31 @@ again whenever we suspect a gap.
 
 389 checks across seven suites.
 
+### Bedrock writes the message, and cannot make it wrong
+
+The engine's own sentence is accurate and reads like a machine. Bedrock rewrites
+the opening line, and everything it returns is checked before it is used.
+
+**Every number in the message must appear in the facts.** A model that writes
+"she fell at 07:30" when nothing says 07:30, and nothing says she fell, is
+refused and the engine's sentence goes instead. This is the guard that matters:
+in a caretaking product a fluent invention is more dangerous than a clumsy
+truth.
+
+**The model never sees more than the facts.** It gets who, when, how long, what
+is normal, whether a door opened, and which habits were missed. It cannot reach
+the raw events and it is told plainly that it does not know whether she has
+fallen, only that she has not moved.
+
+**A failure is silent.** Timeout, empty reply, banned word, wrong length: all of
+them fall back to the deterministic sentence, and the reason is recorded rather
+than raised. The notification path never depends on the model being available.
+
+**Only the opening line is rewritten.** The reasoning underneath stays exactly
+as the engine produced it, so what a caregiver can verify is never paraphrased.
+
+440 checks across eight suites.
+
 ---
 
 The Ring developer friction log lives in [FRICTION_LOG.md](FRICTION_LOG.md).

@@ -1,0 +1,29 @@
+[Unit]
+Description=Stillwatch
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=stillwatch
+Group=stillwatch
+WorkingDirectory=/opt/stillwatch
+EnvironmentFile=/etc/stillwatch.env
+ExecStart=/opt/stillwatch/.venv/bin/gunicorn wsgi:app \
+    --bind 127.0.0.1:8000 \
+    --workers 2 \
+    --threads 4 \
+    --timeout 30 \
+    --access-logfile - \
+    --error-logfile -
+Restart=always
+RestartSec=5
+
+# The service reads and writes nothing outside its own folder.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/stillwatch
+
+[Install]
+WantedBy=multi-user.target

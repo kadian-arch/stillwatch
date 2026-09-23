@@ -68,6 +68,7 @@ class Assessment:
     threshold_seconds: float = None
     ratio: float = None
     last_device: str = None
+    last_device_name: str = None
     departure_at: datetime = None
     departure_device: str = None
     missed_anchors: list = field(default_factory=list)
@@ -96,6 +97,7 @@ class Assessment:
             "threshold_seconds": self.threshold_seconds,
             "ratio": round(self.ratio, 3) if self.ratio is not None else None,
             "last_device": self.last_device,
+            "last_device_name": self.last_device_name,
             "departure_at": self.departure_at.isoformat() if self.departure_at else None,
             "departure_device": self.departure_device,
             "missed_anchors": [
@@ -209,7 +211,7 @@ def _away_assessment(now, roster, baseline, last, departure, silence, threshold,
         at=now, state=state, headline=headline, reasons=reasons,
         silence_seconds=silence, silence_began=began,
         threshold_seconds=threshold, ratio=ratio,
-        last_device=last.device_id,
+        last_device=last.device_id, last_device_name=roster.name(last.device_id),
         departure_at=departure.at, departure_device=departure.device_id,
         absence_unusual=unusual,
         devices_down=list(down),
@@ -349,7 +351,7 @@ def assess(events, baseline, roster, now):
         at=now, state=state, headline=headline, reasons=reasons,
         silence_seconds=silence, silence_began=began,
         threshold_seconds=threshold, ratio=ratio,
-        last_device=last.device_id,
+        last_device=last.device_id, last_device_name=room,
         missed_anchors=missed, devices_down=list(down),
         capped_by_outage=capped,
     )

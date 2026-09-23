@@ -33,6 +33,7 @@ leaving. The same stretch with no transit event is someone who stopped.
 | Event store, SQLite or Postgres | done |
 | Ring adapter, webhook and account linking | done, awaiting a deployed HTTPS address |
 | History backfill on first link | done |
+| Bedrock writing the message a family reads | done |
 
 ## The learner
 
@@ -137,6 +138,31 @@ environment variables:
 
 With nothing configured, messages are printed rather than sent anywhere.
 SNS needs `pip install boto3`; nothing else does.
+
+## The sentence a family actually reads
+
+Stillwatch knows exactly why it is worried, and what it produces on its own is
+correct, complete and cold. A daughter reading it at three in the morning does
+not need a report.
+
+Amazon Bedrock rewrites the opening sentence. It is given the facts and nothing
+else, and what it returns is checked before anyone sees it:
+
+- Every number in the message must appear in the facts. A model that invents a
+  time is refused.
+- A short list of words it may never use: alert, system, detected, monitoring,
+  anomaly, status, trigger.
+- Two sentences, no greeting, no sign off, no telling anyone how to feel.
+- If the model is slow, silent, or refused, the engine's own sentence is sent
+  instead and nothing is lost.
+
+The reasoning underneath the opening line is never touched by the model. It is
+the engine's, and it stays exactly as the engine produced it.
+
+**The model makes the message human. It can never make it wrong.**
+
+Set `STILLWATCH_BEDROCK_MODEL_ID` to switch it on, and `AWS_REGION` alongside
+it. With nothing set, messages read exactly as they did before.
 
 ## Why not a neural network
 

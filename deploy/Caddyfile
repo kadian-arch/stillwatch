@@ -1,0 +1,16 @@
+# Caddy obtains and renews the HTTPS certificate on its own, which is the whole
+# reason it is here. Ring will not talk to anything without one.
+
+DOMAIN_HERE {
+	encode gzip
+
+	# Ring must be answered within five seconds, so nothing slow sits in front.
+	reverse_proxy 127.0.0.1:8000 {
+		header_up X-Real-IP {remote_host}
+	}
+
+	log {
+		output file /var/log/caddy/stillwatch.log
+		format console
+	}
+}

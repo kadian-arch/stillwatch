@@ -91,6 +91,13 @@ at an empty house, and a camera that dies while the person is fine.
 Ring's words are translated in exactly one place, which is why the same engine
 runs against the simulator and against real hardware without changing.
 
+## Running it online
+
+Ring requires four HTTPS addresses that the integrator hosts, so Stillwatch has
+to be deployed before a real account can be linked.
+[docs/DEPLOY.md](docs/DEPLOY.md) is the runbook: one script installs Python,
+Postgres, the service and Caddy, which obtains the certificate on its own.
+
 ## Hackathon submission
 
 Built for **Build, Ship, Shape: Amazon Developer Hackathon**.

@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .monitor import ALERT, BLIND, CONCERN, UNKNOWN
+from .narrate import Narration
 from .rhythm import human_duration
 
 CONCERN_NOTICE = "concern"
@@ -53,6 +54,7 @@ class Notice:
     delivered_to: list = field(default_factory=list)
     errors: list = field(default_factory=list)
     reached_people: bool = False
+    written_by_model: bool = False
 
     @property
     def delivered(self):
@@ -69,6 +71,7 @@ class Notice:
             "episode": self.episode,
             "delivered_to": list(self.delivered_to),
             "errors": list(self.errors),
+            "written_by_model": self.written_by_model,
         }
 
 
@@ -120,8 +123,9 @@ def compose(kind, person, reading, link=None):
 
 class Notifier:
     def __init__(self, person, channels, repeat_minutes=REPEAT_MINUTES, link=None,
-                 hold_minutes=CONCERN_HOLD_MINUTES):
+                 hold_minutes=CONCERN_HOLD_MINUTES, narrator=None):
         self.person = person
+        self.narrator = narrator
         self.channels = list(channels)
         self.repeat = timedelta(minutes=repeat_minutes)
         self.hold = timedelta(minutes=hold_minutes)
@@ -141,8 +145,19 @@ class Notifier:
 
     def _deliver(self, kind, reading, episode):
         subject, body, urgency = compose(kind, self.person, reading, self._link_for(reading))
+        written_by_model = False
+
+        if self.narrator is not None:
+            # The model rewrites the opening sentence only. The reasoning
+            # underneath it is ours and stays exactly as the engine produced it.
+            lead, separator, rest = body.partition("\n")
+            narration = self.narrator.narrate(kind, self.person, reading, lead)
+            written_by_model = narration.used_model
+            body = narration.text + separator + rest
+
         notice = Notice(at=reading.at, kind=kind, urgency=urgency, subject=subject,
-                        body=body, state=reading.state, episode=episode)
+                        body=body, state=reading.state, episode=episode,
+                        written_by_model=written_by_model)
         for channel in self.channels:
             try:
                 channel.send(notice)
