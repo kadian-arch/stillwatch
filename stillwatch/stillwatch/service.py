@@ -65,7 +65,7 @@ class ReplaySource:
     def events(self, key):
         return load_events(self.folder / ("%s.jsonl" % key))
 
-    def roster(self):
+    def roster(self, key=None):
         return load_roster(self.folder / "manifest.json")
 
 
@@ -96,8 +96,47 @@ class LiveSource:
     def events(self, key):
         return self.store.events()
 
-    def roster(self):
+    def roster(self, key=None):
         return self.store.roster()
+
+
+class CompositeSource:
+    """Real events, with the demonstration days still reachable beside them.
+
+    A home that has just been connected has nothing to show, and a blank
+    dashboard is a poor way to explain what the product does. The recorded
+    days stay available so it can be seen working before its own history
+    exists. They are marked as demonstrations wherever they are offered."""
+
+    kind = "live"
+
+    def __init__(self, live, demo):
+        self.live = live
+        self.demo = demo
+
+    def persona(self):
+        return self.live.persona()
+
+    def scenarios(self):
+        entries = [dict(entry, live=True) for entry in self.live.scenarios()]
+        for entry in self.demo.scenarios():
+            entries.append(dict(entry, live=False, demo=True))
+        return entries
+
+    def describe(self, key):
+        for entry in self.scenarios():
+            if entry["key"] == key:
+                return entry
+        return None
+
+    def _pick(self, key):
+        return self.live if key == "live" else self.demo
+
+    def events(self, key):
+        return self._pick(key).events(key)
+
+    def roster(self, key=None):
+        return self._pick(key).roster(key)
 
 
 def _minute(moment, midnight):
@@ -161,8 +200,8 @@ def build_day(source, key):
     """Everything the dashboard needs for one day, computed once."""
     meta = source.describe(key) or {"key": key, "title": key}
     events = source.events(key)
-    roster = source.roster()
-    live = getattr(source, "kind", "replay") == "live"
+    roster = source.roster(key)
+    live = bool(meta.get("live", getattr(source, "kind", "replay") == "live"))
 
     if live:
         now = datetime.now(timezone.utc)
@@ -275,8 +314,9 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
         return key in {entry["key"] for entry in source.scenarios()}
 
     def bundle(key):
-        # A live day is never cached. Today keeps happening.
-        if live:
+        # Today keeps happening, so the live day is never cached. A recorded
+        # day cannot change, so it is worked out once.
+        if live and key == "live":
             return build_day(source, key)
         with lock:
             if key not in cache:
@@ -410,7 +450,7 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
             abort(400, description="at must be an ISO 8601 timestamp")
 
         events = source.events(key)
-        roster = source.roster()
+        roster = source.roster(key)
         midnight = moment.replace(hour=0, minute=0, second=0, microsecond=0)
         baseline = learn(events, roster, until=midnight)
         return jsonify(assess(events, baseline, roster, moment).to_dict())

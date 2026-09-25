@@ -25,7 +25,7 @@ def build_parser():
         description="Generate Ring style event streams for a person living alone.",
     )
     parser.add_argument("--scenario", default="normal", choices=sorted(SCENARIOS))
-    parser.add_argument("--persona", default="margaret", choices=sorted(PERSONAS))
+    parser.add_argument("--persona", default="margarette", choices=sorted(PERSONAS))
     parser.add_argument("--days", type=int, default=21)
     parser.add_argument("--start", type=_parse_date, default=None,
                         help="First day of the stream. Defaults so the stream ends today.")

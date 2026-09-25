@@ -23,7 +23,8 @@ from datetime import datetime, timedelta, timezone
 from .model import DING, Device, Event, INTERIOR, MOTION, OFFLINE, ONLINE, TRANSIT, parse_timestamp
 
 TOKEN_URL = "https://oauth.ring.com/oauth/token"
-API_BASE = "https://api.amazonvision.com/v1"
+API_HOST = "https://api.amazonvision.com"
+API_BASE = API_HOST + "/v1"
 SCOPE = "ava.v1:read"
 
 SIGNATURE_HEADER = "X-Signature"
@@ -279,6 +280,17 @@ class RingClient:
         if self.access_token and fresh:
             return self.access_token
         return self.refresh()
+
+    def fetch(self, path):
+        """Any path on Ring's own API, for seeing what it really returns.
+
+        Same rule as pagination: a path is data, and following one wherever it
+        points would hand an access token to a stranger.
+        """
+        url = path if path.startswith("http") else API_HOST + path
+        if urllib.parse.urlsplit(url).netloc != urllib.parse.urlsplit(API_BASE).netloc:
+            raise RingError("refusing to fetch from another host")
+        return self._json(url, self.token())
 
     def devices(self):
         """Every device on the linked account, classified by name."""

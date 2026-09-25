@@ -55,7 +55,7 @@ def main():
     listing = client.get("/api/scenarios").get_json()
     keys = [entry["key"] for entry in listing["scenarios"]]
     check("every scenario is listed", {"fall", "away", "camera_offline"} <= set(keys), str(keys))
-    check("the persona is named", listing["persona"] == "Margaret", listing["persona"])
+    check("the persona is named", listing["persona"] == source.persona(), listing["persona"])
 
     section("a replayed day")
     day = client.get("/api/day?scenario=fall").get_json()
@@ -64,7 +64,8 @@ def main():
     check("readings run from midnight in order",
           day["readings"][0]["minute"] == 0
           and all(a["minute"] < b["minute"] for a, b in zip(day["readings"], day["readings"][1:])))
-    check("every device is described", len(day["devices"]) == 6)
+    check("every device is described", len(day["devices"]) == len(source.roster()),
+          str(len(day["devices"])))
     check("the rhythm covers every device and hour",
           all(len(row) == 24 for row in day["baseline"]["rhythm"].values()))
     check("tolerated quiet covers every hour", len(day["baseline"]["quiet"]) == 24)

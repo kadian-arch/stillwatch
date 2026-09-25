@@ -167,7 +167,7 @@ licence. The thing we build to unblock ourselves becomes the entry.
 
 ## The demo, under 3 minutes
 
-1. Margaret's learned week. This is what her normal looks like.
+1. Margarette's learned week. This is what her normal looks like.
 2. Today, no kitchen activity by 09:00. She is normally up by 07:30.
 3. The ladder moves QUIET to CONCERN, and states its reasoning.
 4. The front door has not opened. She is home, not out.

@@ -82,7 +82,7 @@ def day_of(key):
 
 def replay(readings, channels=None, **options):
     channel = MemoryChannel()
-    notifier = Notifier("Margaret", channels or [channel], **options)
+    notifier = Notifier("Margarette", channels or [channel], **options)
     for reading in readings:
         notifier.observe(reading)
     return notifier, channel
@@ -235,7 +235,7 @@ def test_failed_delivery_is_retried():
     section("a failed send is not a sent message")
     flaky = Flaky(failures=2)
     sequence = [reading(ALERT, 700 + step * 5, 590) for step in range(5)]
-    notifier = Notifier("Margaret", [flaky])
+    notifier = Notifier("Margarette", [flaky])
     outcomes = [notifier.observe(item) for item in sequence]
 
     check("the first two attempts fail and are reported",
@@ -247,7 +247,7 @@ def test_failed_delivery_is_retried():
     log = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
     log.close()
     dead = FakeSNS(fail=True)
-    notifier = Notifier("Margaret", [SNSChannel("arn:aws:sns:eu-west-1:1:t", client=dead),
+    notifier = Notifier("Margarette", [SNSChannel("arn:aws:sns:eu-west-1:1:t", client=dead),
                                      JsonLinesChannel(log.name)])
     result = notifier.observe(reading(ALERT, 700, 590))[0]
     check("a log accepting it does not count as a person told", not result.delivered)
@@ -278,7 +278,7 @@ def test_sns_channel():
     fake = FakeSNS()
     channel = SNSChannel("arn:aws:sns:eu-west-1:123456789012:stillwatch", client=fake)
     _, _, _, _, readings = day_of("fall")
-    notifier = Notifier("Margaret", [channel], link="https://example.invalid/view")
+    notifier = Notifier("Margarette", [channel], link="https://example.invalid/view")
     for item in readings:
         notifier.observe(item)
 
@@ -315,7 +315,7 @@ def test_configuration():
               [c.name for c in channels] == ["log", "console"])
 
         stream = io.StringIO()
-        notifier = Notifier("Margaret", [JsonLinesChannel(log), ConsoleChannel(stream)])
+        notifier = Notifier("Margarette", [JsonLinesChannel(log), ConsoleChannel(stream)])
         notifier.observe(reading(ALERT, 700, 590))
         record = json.loads(Path(log).read_text(encoding="utf-8").splitlines()[0])
         check("the log holds the notice", record["kind"] == ALERT_NOTICE)

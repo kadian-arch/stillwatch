@@ -25,7 +25,9 @@ DEFAULT_DEVICES: tuple[Device, ...] = (
     Device("hallway", "Hallway", INTERIOR, ("hallway",), 45.0, 30),
     Device("kitchen", "Kitchen", INTERIOR, ("kitchen",), 26.0, 45),
     Device("living_room", "Living Room", INTERIOR, ("living_room",), 9.0, 60),
-    Device("landing", "Landing", INTERIOR, ("bathroom", "bedroom"), 20.0, 45),
+    Device("landing", "Landing", INTERIOR, ("bedroom", "bathroom"), 13.0, 45),
+    Device("bedroom_door", "Bedroom Door", INTERIOR, ("bedroom",), 21.0, 45),
+    Device("bathroom_door", "Bathroom Door", INTERIOR, ("bathroom",), 24.0, 40),
 )
 
 

@@ -206,9 +206,88 @@ def cmd_backfill(args):
     return 0 if report.ok else 1
 
 
+def cmd_probe(args):
+    """Call the real Ring API with a Playground token and report what comes back.
+
+    The Playground issues a short lived token against synthetic devices, which
+    is the only way to exercise this client against Ring itself without owning
+    hardware. Whatever it prints is Ring's own answer, not ours.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from .ring import API_BASE, RingClient, RingError
+
+    token = args.token.strip()
+    if not token:
+        print("paste the token from the Ring Playground with --token", file=sys.stderr)
+        return 2
+
+    client = RingClient(
+        client_id=os.environ.get("STILLWATCH_RING_CLIENT_ID", "playground"),
+        client_secret=os.environ.get("STILLWATCH_RING_CLIENT_SECRET", ""),
+        access_token=token,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=25),
+    )
+
+    print("asking %s" % API_BASE)
+    try:
+        devices = client.devices()
+    except RingError as error:
+        print("  devices: %s" % error, file=sys.stderr)
+        return 1
+    except Exception as error:
+        print("  devices: %s: %s" % (type(error).__name__, error), file=sys.stderr)
+        return 1
+
+    print("\ndevices: %d" % len(devices))
+    for device in devices:
+        print("  %-28s %-9s %s" % (device.name, device.zone_class, device.device_id))
+
+    if not devices:
+        print("  the account this token belongs to reports no devices")
+        return 0
+
+    if args.raw:
+        import json as _json
+
+        raw = client.fetch("/v1/devices?include=status,location")
+        print()
+        print(_json.dumps(raw, indent=2)[:4000])
+        for record in (raw.get("data") or []):
+            links = record.get("relationships") or {}
+            for name in ("capabilities", "status"):
+                related = ((links.get(name) or {}).get("links") or {}).get("related")
+                if not related:
+                    continue
+                print()
+                print("--- %s ---" % name)
+                try:
+                    print(_json.dumps(client.fetch(related), indent=2)[:2500])
+                except Exception as error:
+                    print("  %s: %s" % (type(error).__name__, error))
+        return 0
+
+    since = datetime.now(timezone.utc) - timedelta(days=args.days)
+    print("\nhistory since %s" % since.date().isoformat())
+    for device in devices:
+        try:
+            events = client.history(device.device_id, since=since)
+        except RingError as error:
+            print("  %-28s refused: %s" % (device.name, error))
+            continue
+        except Exception as error:
+            print("  %-28s %s: %s" % (device.name, type(error).__name__, error))
+            continue
+        print("  %-28s %d events" % (device.name, len(events)))
+        if events:
+            first = events[0]
+            print("      earliest %s  %s" % (first.at.isoformat(), first.kind))
+    return 0
+
+
 def cmd_serve(args):
     try:
-        from .service import LiveSource, ReplaySource, create_app
+        from .service import CompositeSource, LiveSource, ReplaySource, create_app
     except ImportError:
         print("the dashboard needs Flask: pip install -r requirements.txt", file=sys.stderr)
         return 1
@@ -221,8 +300,14 @@ def cmd_serve(args):
 
         store = EventStore(args.db)
         source = LiveSource(store, person=args.person)
+        demo = ReplaySource(args.data) if args.demo else None
+        if demo is not None and demo.scenarios():
+            source = CompositeSource(source, demo)
         print("Stillwatch on http://%s:%d, live" % (args.host, args.port))
         print("  events in %s: %d" % (args.db, store.count()))
+        if demo is not None and demo.scenarios():
+            print("  %d recorded days offered alongside, marked as demonstrations"
+                  % len(demo.scenarios()))
         if secret:
             print("  Ring webhook ready at POST /ring/events")
         else:
@@ -281,10 +366,20 @@ def build_parser():
                         help="How far back to ask for. Defaults to 30 days.")
     filler.set_defaults(handler=cmd_backfill)
 
+    prober = commands.add_parser(
+        "probe", help="Call the real Ring API with a Playground token.")
+    prober.add_argument("--token", default="", help="A token from the Ring Playground.")
+    prober.add_argument("--days", type=int, default=7, help="How far back to ask for.")
+    prober.add_argument("--raw", action="store_true",
+                        help="Print what Ring actually sends, including capabilities.")
+    prober.set_defaults(handler=cmd_probe)
+
     server = commands.add_parser("serve", help="Run the dashboard.")
     server.add_argument("--data", default="data", help="Folder holding the replay files.")
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8420)
+    server.add_argument("--demo", action="store_true",
+                        help="Also offer the recorded days, marked as demonstrations.")
     server.add_argument("--live", action="store_true",
                         help="Serve real events from the store instead of replays.")
     server.add_argument("--db", default="events.db", help="Event store for live mode.")

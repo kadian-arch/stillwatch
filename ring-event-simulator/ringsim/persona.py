@@ -46,8 +46,8 @@ class Persona:
         return WEEKEND if day.weekday() >= 5 else WEEKDAY
 
 
-MARGARET = Persona(
-    name="Margaret",
+MARGARETTE = Persona(
+    name="Margarette",
     weekday=(
         RoutineStep("wake", "bedroom", 410, 18, 15, 5),
         RoutineStep("wash", "bathroom", 425, 12, 15, 5),
@@ -87,4 +87,4 @@ MARGARET = Persona(
     visitor_chance=0.30,
 )
 
-PERSONAS = {"margaret": MARGARET}
+PERSONAS = {"margarette": MARGARETTE}

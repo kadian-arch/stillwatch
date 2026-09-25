@@ -5,119 +5,200 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stillwatch</title>
   <meta name="description" content="Watches for the silence. Inactivity detection for a person living alone.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f4f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#14151a" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <link rel="apple-touch-icon" href="/static/og.png">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Stillwatch">
+  <meta property="og:title" content="Stillwatch">
+  <meta property="og:description" content="Learns when someone normally moves around their home, and tells somebody left from somebody stopped.">
+  <meta property="og:image" content="/static/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header class="top">
-    <div class="top-inner">
-      <div class="brand">
-        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-          <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2.2"/>
-          <path d="M9 17h4l2-5 3 9 2-4h3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="12.4" fill="none" stroke="currentColor" stroke-width="2" opacity=".26"/>
+        <path d="M8.5 17.2h3.4l2.1-5.4 3.1 9.1 1.9-3.7h4.5" fill="none" stroke="currentColor"
+              stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="wordmark">Stillwatch</span>
+    </div>
+
+    <div class="watching">
+      <span class="watching-label">Watching over</span>
+      <strong id="home">&nbsp;</strong>
+    </div>
+
+    <div class="top-right">
+      <span class="live" id="livePill" hidden><i></i>Live</span>
+      <button type="button" class="theme" id="theme" aria-label="Switch between light and dark">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <circle class="sun" cx="10" cy="10" r="4"/>
+          <g class="rays" stroke-linecap="round">
+            <path d="M10 1.6v2M10 16.4v2M18.4 10h-2M3.6 10h-2M15.9 4.1l-1.4 1.4M5.5 14.5l-1.4 1.4M15.9 15.9l-1.4-1.4M5.5 5.5L4.1 4.1"/>
+          </g>
+          <path class="moon" d="M14.8 12.6A5.6 5.6 0 0 1 7.4 5.2a5.8 5.8 0 1 0 7.4 7.4z"/>
         </svg>
-        <div class="brand-text">
-          <span class="name">Stillwatch</span>
-          <span class="home" id="home">Loading</span>
+      </button>
+    </div>
+
+    <label class="field" id="dayField" hidden>
+      <span>Day</span>
+      <select id="scenario"></select>
+    </label>
+  </div>
+</header>
+
+<main class="wrap" id="app" aria-busy="true">
+
+  <p class="empty" id="empty" hidden></p>
+
+  <section class="standby" id="standby" hidden>
+    <p class="eyebrow">
+      <span class="beacon"><i></i></span>
+      <span class="state-word">Standing by</span>
+    </p>
+    <h1 class="statement">Stillwatch is watching.</h1>
+    <p class="lede">It learns when someone normally moves around their own home, hour by
+      hour, and notices when they stop. The hard part is not spotting silence. It is
+      telling <em>she went out</em> from <em>she stopped</em>, because both look the same
+      from the outside.</p>
+    <dl class="facts" id="facts"></dl>
+    <div class="standby-do">
+      <button type="button" class="cta" id="seeDemo">See it read a day</button>
+      <p class="cta-note">A recorded day, so it can be seen working before this home has
+        a history of its own.</p>
+    </div>
+  </section>
+
+  <p class="banner" id="banner" hidden></p>
+
+  <section class="hero" id="hero" aria-live="polite" aria-label="How she is right now">
+    <div class="hero-text">
+      <p class="eyebrow">
+        <span class="beacon" id="beacon" aria-hidden="true"><i></i></span>
+        <span class="state-word" id="stateWord">&nbsp;</span>
+        <span class="at" id="heroClock"></span>
+      </p>
+      <h1 class="statement" id="statement">&nbsp;</h1>
+      <ul class="reasons" id="reasons"></ul>
+    </div>
+
+    <div class="hero-meter">
+      <div class="meter" id="meter">
+        <p class="meter-head">
+          <span class="meter-label" id="meterLabel">Still for</span>
+          <strong class="meter-value" id="meterValue">&mdash;</strong>
+        </p>
+        <div class="track" id="track">
+          <div class="fill" id="fill"></div>
+          <span class="mark-quiet"></span>
+          <span class="mark-concern"></span>
         </div>
-      </div>
-      <div class="controls">
-        <label class="field">
-          <span>Day</span>
-          <select id="scenario"></select>
-        </label>
-        <label class="field">
-          <span>Compare</span>
-          <select id="compare">
-            <option value="">Nothing</option>
-          </select>
-        </label>
+        <p class="meter-foot" id="meterFoot"></p>
       </div>
     </div>
-  </header>
+  </section>
 
-  <main class="layout" id="app" aria-busy="true">
-    <p class="empty" id="empty" hidden></p>
+  <section class="card messages" aria-labelledby="messages-h">
+    <div class="card-head">
+      <h2 id="messages-h">Messages to her family</h2>
+      <span class="count" id="messageCount"></span>
+    </div>
+    <div class="msg-list" id="messages"></div>
+  </section>
 
-    <section class="now" id="now" aria-live="polite" aria-label="Current judgement"></section>
-
-    <section class="card gauge-card" aria-labelledby="gauge-title">
-      <h2 id="gauge-title">Quiet so far</h2>
-      <div class="gauge" id="gauge"></div>
-      <p class="gauge-note" id="gaugeNote"></p>
-    </section>
-
-    <section class="card timeline" aria-label="Replay">
-      <div class="timeline-head">
+  <section class="card chartcard" aria-labelledby="chart-h">
+    <div class="card-head">
+      <h2 id="chart-h">The day so far</h2>
+      <div class="player">
         <button type="button" class="play" id="play" aria-pressed="false">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path id="playIcon" d="M4 2.5v11l9-5.5z"/></svg>
-          <span id="playLabel">Play the day</span>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path id="playIcon" d="M4.5 2.6v10.8l8.4-5.4z"/></svg>
+          <span id="playLabel">Play</span>
         </button>
         <label class="speed">
-          <span class="visually-hidden">Speed</span>
+          <span class="sr">Speed</span>
           <select id="speed">
-            <option value="1">1x</option>
-            <option value="2">2x</option>
-            <option value="4">4x</option>
+            <option value="1">1&times;</option>
+            <option value="2" selected>2&times;</option>
+            <option value="6">6&times;</option>
           </select>
         </label>
         <output class="clock" id="clock">00:00</output>
-        <span class="day" id="dayLabel"></span>
       </div>
-      <div class="strips" id="strips"></div>
-      <input type="range" id="time" min="0" max="287" step="1" value="72" aria-label="Time of day">
-      <div class="hours" aria-hidden="true">
-        <span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span>
-      </div>
-      <ul class="legend" aria-label="Legend">
-        <li><i data-state="NORMAL"></i>Normal</li>
-        <li><i data-state="QUIET"></i>Quiet</li>
-        <li><i data-state="CONCERN"></i>Concern</li>
-        <li><i data-state="ALERT"></i>Alert</li>
-        <li><i data-state="AWAY"></i>Out</li>
-        <li><i data-state="UNKNOWN"></i>Cannot tell</li>
-        <li><i class="tick"></i>Door</li>
-      </ul>
-    </section>
+    </div>
 
-    <section class="card messages-card" aria-labelledby="messages-title">
-      <h2 id="messages-title">Messages to her family</h2>
-      <div id="messages"></div>
-    </section>
+    <div class="chart" id="chart">
+      <div class="ribbon" id="ribbon" aria-hidden="true"></div>
+      <div class="tracks" id="tracks"></div>
+      <div class="needle" id="needle" aria-hidden="true"><b></b></div>
+    </div>
 
-    <section class="card today-card" aria-labelledby="today-title">
-      <h2 id="today-title">Today against her normal</h2>
-      <div class="heat" id="heat"></div>
-      <p class="note">Shading is how often she is usually there at that hour. A dot means she was there today. Stripes mean the camera was offline.</p>
-    </section>
+    <input type="range" id="time" min="0" max="1435" step="5" value="720" aria-label="Time of day">
 
-    <section class="card habits-card" aria-labelledby="habits-title">
-      <h2 id="habits-title">Her habits</h2>
-      <ul class="anchors" id="anchors"></ul>
-      <p class="note" id="learnedFrom"></p>
-    </section>
+    <div class="axis" aria-hidden="true">
+      <span>00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span>24</span>
+    </div>
 
-    <section class="card quiet-card" aria-labelledby="quiet-title">
-      <h2 id="quiet-title">Quiet she normally has</h2>
-      <div class="quietbars" id="quietbars"></div>
-      <div class="quietaxis" aria-hidden="true">
-        <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
-      </div>
-      <p class="note">Longest stillness in a normal day, by the hour it starts. Long at night, short by day, and learned rather than set.</p>
-    </section>
+    <ul class="legend">
+      <li><i data-state="NORMAL"></i>Normal</li>
+      <li><i data-state="QUIET"></i>Quiet</li>
+      <li><i data-state="CONCERN"></i>Concern</li>
+      <li><i data-state="ALERT"></i>Alert</li>
+      <li><i data-state="AWAY"></i>Out</li>
+      <li><i data-state="UNKNOWN"></i>Cannot tell</li>
+      <li><i class="key-door"></i>Door</li>
+      <li><i class="key-off"></i>Camera offline</li>
+    </ul>
+  </section>
 
-    <section class="card cameras-card" aria-labelledby="cameras-title">
-      <h2 id="cameras-title">Cameras</h2>
-      <ul class="devices" id="devices"></ul>
-    </section>
-  </main>
+  <section class="card normal" aria-labelledby="normal-h">
+    <div class="card-head">
+      <h2 id="normal-h">Quiet she normally has</h2>
+    </div>
+    <div class="bars" id="quietbars"></div>
+    <div class="bars-axis" aria-hidden="true">
+      <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+    </div>
+    <p class="note">The longest stillness in an ordinary day, by the hour it begins. Hours
+      at night, minutes at midday. Learned from her own weeks, never typed in.</p>
+  </section>
 
-  <footer class="foot">
-    <p id="footnote">Replaying simulated data. Times are the household's own clock.</p>
-  </footer>
+  <section class="card habits" aria-labelledby="habits-h">
+    <div class="card-head">
+      <h2 id="habits-h">Her habits</h2>
+    </div>
+    <ul class="anchor-list" id="anchors"></ul>
+    <p class="note" id="learnedFrom"></p>
+  </section>
 
-  <script src="/static/app.js"></script>
+  <section class="card cameras" aria-labelledby="cameras-h">
+    <div class="card-head">
+      <h2 id="cameras-h">Cameras</h2>
+    </div>
+    <ul class="device-list" id="devices"></ul>
+    <p class="note">A camera on a way in or out tells us she left. An inside camera tells
+      us she is moving. Stillwatch never looks at video.</p>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <p id="footnote">&nbsp;</p>
+</footer>
+
+<script src="/static/app.js"></script>
 </body>
 </html>

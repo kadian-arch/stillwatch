@@ -80,28 +80,28 @@ class FakeBedrock:
 
 def test_facts():
     section("what the model is allowed to know")
-    facts = facts_for("Margaret", collapsed())
-    report("it names who this is about", "Margaret" in facts)
+    facts = facts_for("Margarette", collapsed())
+    report("it names who this is about", "Margarette" in facts)
     report("it gives the time she was last seen", "09:14" in facts)
     report("it names the room", "Kitchen" in facts)
     report("it gives how long she has been still", "1h 46m" in facts)
     report("it gives what is normal for her", "35 min" in facts)
     report("it says no door opened", "No door has opened" in facts, facts)
 
-    out = facts_for("Margaret", collapsed(departure_at=at(8, 10)))
+    out = facts_for("Margarette", collapsed(departure_at=at(8, 10)))
     report("when a door did open, it says so instead", "A door opened at 08:10" in out, out)
 
 
 def test_refusals():
     section("what the model is not allowed to say")
-    facts = facts_for("Margaret", collapsed())
+    facts = facts_for("Margarette", collapsed())
 
     report("a made up time is refused",
-           check("Margaret has not moved since 07:30.", facts) is not None)
+           check("Margarette has not moved since 07:30.", facts) is not None)
     report("and the refusal names the invented number",
-           "07" in check("Margaret has not moved since 07:30.", facts))
+           "07" in check("Margarette has not moved since 07:30.", facts))
     report("a real time from the facts is fine",
-           check("Margaret has not moved since 09:14.", facts) is None)
+           check("Margarette has not moved since 09:14.", facts) is None)
 
     for word in ("alert", "system", "detected", "monitoring", "anomaly", "status"):
         report("it will not say %s" % word,
@@ -113,17 +113,17 @@ def test_refusals():
     report("two paragraphs are refused",
            check("One thing.\n\nAnother thing.", facts) is not None)
 
-    good = "Margaret hasn't moved since 09:14, which is much longer than her usual quiet."
+    good = "Margarette hasn't moved since 09:14, which is much longer than her usual quiet."
     report("a plain human sentence passes", check(good, facts) is None, str(check(good, facts)))
 
 
 def test_the_model_writes_it():
     section("Bedrock writes the message")
-    written = "Margaret hasn't moved since 09:14. No door has opened, so she's at home."
+    written = "Margarette hasn't moved since 09:14. No door has opened, so she's at home."
     bedrock = FakeBedrock(written)
     narrator = BedrockNarrator("some.model.id", client=bedrock)
 
-    result = narrator.narrate("alert", "Margaret", collapsed(), "the fallback sentence")
+    result = narrator.narrate("alert", "Margarette", collapsed(), "the fallback sentence")
     report("the model's words are used", result.text == written, result.text)
     report("and it is recorded as the model's", result.used_model is True)
     report("the model id is recorded", result.model_id == "some.model.id")
@@ -147,22 +147,22 @@ def test_the_model_cannot_make_it_wrong():
     fallback = "No movement since 09:14, now 1h 46m."
 
     liar = BedrockNarrator("m", client=FakeBedrock("She fell at 07:30 in the bathroom."))
-    result = liar.narrate("alert", "Margaret", collapsed(), fallback)
+    result = liar.narrate("alert", "Margarette", collapsed(), fallback)
     report("an invented time is thrown away", result.text == fallback, result.text)
     report("the fallback is not credited to the model", result.used_model is False)
     report("and the reason is recorded", "invented a number" in result.reason, result.reason)
 
     robot = BedrockNarrator("m", client=FakeBedrock("The system detected an anomaly."))
-    result = robot.narrate("alert", "Margaret", collapsed(), fallback)
+    result = robot.narrate("alert", "Margarette", collapsed(), fallback)
     report("robot language is thrown away", result.text == fallback)
     report("the reason names the word", "do not use" in result.reason, result.reason)
 
     silent = BedrockNarrator("m", client=FakeBedrock(""))
     report("an empty reply falls back",
-           silent.narrate("alert", "Margaret", collapsed(), fallback).text == fallback)
+           silent.narrate("alert", "Margarette", collapsed(), fallback).text == fallback)
 
     broken = BedrockNarrator("m", client=FakeBedrock(fail=TimeoutError("read timed out")))
-    result = broken.narrate("alert", "Margaret", collapsed(), fallback)
+    result = broken.narrate("alert", "Margarette", collapsed(), fallback)
     report("a timeout falls back rather than raising", result.text == fallback)
     report("the failure is recorded", "bedrock failed" in result.reason, result.reason)
 
@@ -179,9 +179,9 @@ def _raises(action):
 
 def test_it_reaches_the_message():
     section("the message a family actually gets")
-    written = "Margaret hasn't moved since 09:14. No door has opened, so she's at home."
+    written = "Margarette hasn't moved since 09:14. No door has opened, so she's at home."
     channel = MemoryChannel()
-    notifier = Notifier("Margaret", [channel],
+    notifier = Notifier("Margarette", [channel],
                         narrator=BedrockNarrator("m", client=FakeBedrock(written)))
 
     notifier.observe(collapsed())
@@ -196,19 +196,19 @@ def test_it_reaches_the_message():
            notice.subject.startswith("Stillwatch:"), notice.subject)
 
     plain = MemoryChannel()
-    Notifier("Margaret", [plain]).observe(collapsed())
+    Notifier("Margarette", [plain]).observe(collapsed())
     report("with no narrator the message is unchanged",
-           plain.notices[0].body.startswith("Please check on Margaret."),
+           plain.notices[0].body.startswith("Please check on Margarette."),
            plain.notices[0].body[:60])
     report("and it is not credited to a model",
            plain.notices[0].written_by_model is False)
 
     lying = MemoryChannel()
-    Notifier("Margaret", [lying],
+    Notifier("Margarette", [lying],
              narrator=BedrockNarrator("m", client=FakeBedrock("She fell at 07:30."))
              ).observe(collapsed())
     report("a refused sentence sends our own words instead",
-           lying.notices[0].body.startswith("Please check on Margaret."))
+           lying.notices[0].body.startswith("Please check on Margarette."))
     report("and says the model did not write it",
            lying.notices[0].written_by_model is False)
 

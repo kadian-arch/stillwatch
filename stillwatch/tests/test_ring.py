@@ -362,7 +362,7 @@ def test_client():
 
 def serving():
     store = EventStore()
-    app = create_app(LiveSource(store, person="Margaret"), store=store, webhook_secret=SECRET)
+    app = create_app(LiveSource(store, person="Margarette"), store=store, webhook_secret=SECRET)
     return store, app.test_client()
 
 
@@ -583,7 +583,7 @@ def test_account_linking():
     store = EventStore()
     fake = FakeRing()
     client = RingClient("client-id", "secret", transport=fake)
-    app = create_app(LiveSource(store, "Margaret"), store=store,
+    app = create_app(LiveSource(store, "Margarette"), store=store,
                      webhook_secret=SECRET, ring=client)
     web = app.test_client()
 

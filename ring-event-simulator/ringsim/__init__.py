@@ -3,7 +3,7 @@
 from .devices import DEFAULT_DEVICES, INTERIOR, TRANSIT, Device, covering, manifest
 from .engine import Block, DayPlan, Outage, Simulator
 from .events import DING, MOTION, OFFLINE, ONLINE, Event, read_jsonl, write_jsonl
-from .persona import MARGARET, PERSONAS, Persona, RoutineStep
+from .persona import MARGARETTE, PERSONAS, Persona, RoutineStep
 from .scenarios import ALERT, NO_ALERT, SCENARIOS, Scenario
 
 __version__ = "0.1.0"
@@ -13,7 +13,7 @@ __all__ = [
     "DEFAULT_DEVICES",
     "DING",
     "INTERIOR",
-    "MARGARET",
+    "MARGARETTE",
     "MOTION",
     "NO_ALERT",
     "OFFLINE",

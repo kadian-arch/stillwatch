@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "stillwatch"))
 
-from stillwatch.service import LiveSource, create_app
+from stillwatch.service import CompositeSource, LiveSource, ReplaySource, create_app
 from stillwatch.store import EventStore
 
 # Heroku sets DATABASE_URL. A container's own disk is wiped on every
@@ -25,8 +25,20 @@ from stillwatch.store import EventStore
 # optional in production.
 store = EventStore(os.environ.get("DATABASE_URL")
                    or os.environ.get("STILLWATCH_DB", "events.db"))
+
+source = LiveSource(store, person=os.environ.get("STILLWATCH_PERSON", "The household"))
+
+# Off unless a folder is named. A live deployment shows live events or it says
+# it is standing by; recorded days are for looking at the engine offline, and
+# are labelled as demonstrations wherever they do appear.
+_demo_folder = os.environ.get("STILLWATCH_DEMO_DATA", "").strip()
+if _demo_folder:
+    demo = ReplaySource(_demo_folder)
+    if demo.scenarios():
+        source = CompositeSource(source, demo)
+
 app = create_app(
-    LiveSource(store, person=os.environ.get("STILLWATCH_PERSON", "The household")),
+    source,
     store=store,
     webhook_secret=os.environ.get("STILLWATCH_RING_WEBHOOK_SECRET", "").strip(),
 )

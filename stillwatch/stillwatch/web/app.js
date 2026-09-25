@@ -1,661 +1,720 @@
-"use strict";
+/* Stillwatch dashboard.
 
-const LABELS = {
-  NORMAL: "Normal",
-  QUIET: "Quiet",
-  CONCERN: "Concern",
-  ALERT: "Alert",
-  AWAY: "Out",
-  UNKNOWN: "Cannot tell",
-};
+   One bundle per day arrives from /api/day and everything on screen is drawn
+   from it. Moving the slider only changes which reading is shown, so scrubbing
+   never waits on the network. */
 
-const PACE_MS = 120;
-const DEFAULT_MINUTE = 6 * 60;
-const SVG_NS = "http://www.w3.org/2000/svg";
+(function () {
+  "use strict";
 
-const ui = {};
-for (const id of [
-  "app", "empty", "home", "scenario", "compare", "now", "play", "playLabel", "playIcon",
-  "speed", "clock", "dayLabel", "strips", "time", "gauge", "gaugeNote", "heat",
-  "learnedFrom", "anchors", "quietbars", "devices", "footnote", "messages",
-]) {
-  ui[id] = document.getElementById(id);
-}
+  var DAY = 1440;
+  var THEME_KEY = "stillwatch.theme";
 
-const view = {
-  scenarios: [],
-  primary: "",
-  second: "",
-  days: {},
-  index: DEFAULT_MINUTE / 5,
-  timer: null,
-  refresh: null,
-  following: false,
-  strips: [],
-};
+  var WORDS = {
+    NORMAL: "All normal",
+    QUIET: "Quiet",
+    CONCERN: "Concern",
+    ALERT: "Needs checking",
+    AWAY: "Out",
+    UNKNOWN: "Cannot tell"
+  };
 
-function el(tag, props, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props || {})) {
-    if (value === null || value === undefined || value === false) continue;
-    if (key === "class") node.className = value;
-    else if (key === "text") node.textContent = value;
-    else if (key === "style") node.setAttribute("style", value);
-    else node.setAttribute(key, value);
-  }
-  for (const child of children.flat()) {
-    if (child !== null && child !== undefined && child !== false) node.append(child);
-  }
-  return node;
-}
+  var TINT = {
+    NORMAL: "--normal",
+    QUIET: "--quiet",
+    CONCERN: "--concern",
+    ALERT: "--alert",
+    AWAY: "--away",
+    UNKNOWN: "--unknown"
+  };
 
-function shape(tag, attrs) {
-  const node = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-  return node;
-}
+  var UNKNOWN_WHY = {
+    blind: "Every camera that matters is offline, so there is nothing to judge.",
+    no_history: "There is not enough history yet to know what normal looks like.",
+    no_baseline: "No rhythm has been learned for this hour yet."
+  };
 
-function pad(value) {
-  return String(value).padStart(2, "0");
-}
+  var $ = function (id) { return document.getElementById(id); };
 
-function clock(minute) {
-  const whole = ((Math.floor(minute) % 1440) + 1440) % 1440;
-  return pad(Math.floor(whole / 60)) + ":" + pad(whole % 60);
-}
+  var ui = {
+    app: $("app"), empty: $("empty"), home: $("home"), theme: $("theme"),
+    livePill: $("livePill"), dayField: $("dayField"), scenario: $("scenario"),
+    standby: $("standby"), facts: $("facts"), seeDemo: $("seeDemo"), banner: $("banner"),
+    hero: $("hero"), stateWord: $("stateWord"), heroClock: $("heroClock"),
+    statement: $("statement"), reasons: $("reasons"),
+    meterLabel: $("meterLabel"), meterValue: $("meterValue"),
+    fill: $("fill"), track: $("track"), meterFoot: $("meterFoot"),
+    messages: $("messages"), messageCount: $("messageCount"),
+    play: $("play"), playIcon: $("playIcon"), playLabel: $("playLabel"),
+    speed: $("speed"), clock: $("clock"),
+    chart: $("chart"), ribbon: $("ribbon"), tracks: $("tracks"), needle: $("needle"),
+    time: $("time"), quietbars: $("quietbars"), anchors: $("anchors"),
+    learnedFrom: $("learnedFrom"), devices: $("devices"), footnote: $("footnote")
+  };
 
-async function getJSON(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(url + " answered " + response.status);
-  return response.json();
-}
+  var day = null;
+  var entries = [];
+  var minute = 0;
+  var timer = null;
+  var refresher = null;
+  var following = true;
 
-function showEmpty(message) {
-  ui.empty.textContent = message;
-  ui.empty.hidden = false;
-  ui.app.classList.add("is-empty");
-  ui.app.setAttribute("aria-busy", "false");
-}
+  /* ---------- small helpers ---------- */
 
-/* Data */
-
-function prepare(day) {
-  const byHour = {};
-  for (const device of day.devices) {
-    const hours = Array.from({ length: 24 }, () => []);
-    for (const minute of day.today[device.device_id] || []) {
-      hours[Math.min(23, Math.floor(minute / 60))].push(minute);
-    }
-    hours.forEach((list) => list.sort((a, b) => a - b));
-    byHour[device.device_id] = hours;
-  }
-  day.byHour = byHour;
-  day.names = Object.fromEntries(day.devices.map((d) => [d.device_id, d.name]));
-  return day;
-}
-
-async function loadDay(key) {
-  if (!view.days[key]) {
-    view.days[key] = prepare(await getJSON("/api/day?scenario=" + encodeURIComponent(key)));
-  }
-  return view.days[key];
-}
-
-function current(day) {
-  return day.readings[Math.min(view.index, day.readings.length - 1)];
-}
-
-function isDown(day, deviceId, from, to) {
-  return day.outages.some((span) =>
-    span.device_id === deviceId && span.from < to && span.to > from);
-}
-
-/* Status */
-
-function statusCard(day, reading, labelled) {
-  return el("article", { class: "status", "data-state": reading.state },
-    el("div", { class: "status-top" },
-      el("span", { class: "state" }, el("i", { "aria-hidden": "true" }), LABELS[reading.state] || reading.state),
-      el("span", { class: "when", text: "as of " + clock(reading.minute) + ", " + day.weekday }),
-      labelled ? el("span", { class: "which", text: day.scenario.title }) : null),
-    el("p", { class: "headline", text: reading.headline }),
-    el("ul", { class: "reasons" }, reading.reasons.map((line) => el("li", { text: line }))));
-}
-
-function renderStatus(days) {
-  ui.now.replaceChildren(...days.map((day) => statusCard(day, current(day), days.length > 1)));
-  ui.app.classList.toggle("compare", days.length > 1);
-}
-
-/* Strips */
-
-function buildStrip(day, labelled) {
-  const total = day.readings.length;
-  const width = 1000;
-  const canvas = shape("svg", {
-    class: "strip",
-    viewBox: "0 0 " + width + " 34",
-    preserveAspectRatio: "none",
-    role: "img",
-    "aria-label": "States across the day for " + day.scenario.title,
-  });
-
-  let start = 0;
-  for (let i = 1; i <= total; i += 1) {
-    const state = day.readings[start].state;
-    if (i < total && day.readings[i].state === state) continue;
-    const x = (start / total) * width;
-    const w = ((i - start) / total) * width;
-    const run = shape("rect", { class: "run", x, y: 0, width: w + 0.5, height: 34, "data-state": state });
-    run.style.fill = "var(--fill)";
-    canvas.append(run);
-    start = i;
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) { node.className = cls; }
+    if (text !== undefined && text !== null) { node.textContent = text; }
+    return node;
   }
 
-  for (const device of day.devices) {
-    if (device.zone_class !== "transit") continue;
-    for (const minute of day.today[device.device_id] || []) {
-      const x = (minute / 1440) * width;
-      canvas.append(shape("line", {
-        class: "tick", x1: x, x2: x, y1: 0, y2: 9, "vector-effect": "non-scaling-stroke",
-      }));
-    }
-  }
-  for (const ding of day.dings) {
-    const x = (ding.minute / 1440) * width;
-    canvas.append(shape("circle", { class: "ding", cx: x, cy: 29, r: 3 }));
+  function param(name) {
+    return new URLSearchParams(location.search).get(name);
   }
 
-  const cover = shape("rect", { x: 0, y: 0, width, height: 34 });
-  cover.style.fill = "var(--track)";
-  const head = shape("line", {
-    class: "head", x1: 0, x2: 0, y1: 0, y2: 34, "vector-effect": "non-scaling-stroke",
-  });
-  canvas.append(cover, head);
-
-  const row = el("div", { class: "strip-row" },
-    labelled ? el("span", { class: "strip-label", text: day.scenario.title }) : null);
-  row.append(canvas);
-  return { row, cover, head, total, width };
-}
-
-function buildStrips(days) {
-  view.strips = days.map((day) => buildStrip(day, days.length > 1));
-  ui.strips.replaceChildren(...view.strips.map((strip) => strip.row));
-}
-
-function moveStrips() {
-  for (const strip of view.strips) {
-    const x = ((Math.min(view.index, strip.total - 1) + 1) / strip.total) * strip.width;
-    strip.cover.setAttribute("x", x);
-    strip.cover.setAttribute("width", Math.max(0, strip.width - x));
-    strip.head.setAttribute("x1", x);
-    strip.head.setAttribute("x2", x);
-  }
-}
-
-/* Gauge */
-
-function renderGauge(day, reading) {
-  ui.gauge.replaceChildren();
-
-  if (reading.state === "UNKNOWN" || reading.silence_seconds === null || !reading.threshold_seconds) {
-    ui.gauge.append(el("div", { class: "gauge-figure", text: "Unknown" }));
-    ui.gaugeNote.textContent = "There is nothing reliable to measure the quiet against right now.";
-    return;
+  function pct(value) {
+    return Math.max(0, Math.min(100, (value / DAY) * 100));
   }
 
-  const limits = day.ladder;
-  const usual = reading.threshold_seconds;
-  const silence = reading.silence_seconds;
-  const top = Math.max(usual * (limits.alert_at + 0.8), silence * 1.08);
-  const share = (value) => Math.min(100, (value / top) * 100);
-
-  const edges = [
-    ["NORMAL", 0, usual * limits.quiet_at],
-    ["QUIET", usual * limits.quiet_at, usual * limits.concern_at],
-    ["CONCERN", usual * limits.concern_at, usual * limits.alert_at],
-    ["ALERT", usual * limits.alert_at, top],
-  ];
-
-  const away = reading.state === "AWAY";
-  const track = el("div", { class: "gauge-track" + (away ? " muted" : "") },
-    edges.map(([state, low, high]) =>
-      el("div", { class: "zone", "data-state": state, style: "width:" + (share(high) - share(low)) + "%" })));
-  track.append(el("div", { class: "gauge-needle", style: "left:" + share(silence) + "%" }));
-
-  const marks = el("div", { class: "gauge-marks", "aria-hidden": "true" },
-    el("span", { style: "left:" + share(usual * limits.quiet_at) + "%", text: "usual" }),
-    el("span", { style: "left:" + share(usual * limits.concern_at) + "%", text: "concern" }),
-    el("span", { style: "left:" + share(usual * limits.alert_at) + "%", text: "alert" }));
-
-  ui.gauge.append(
-    el("div", { class: "gauge-figure" },
-      reading.silence_text,
-      el("small", { text: "since " + clock(reading.began_minute) })),
-    track, marks);
-
-  const startHour = clock(Math.floor(reading.began_minute / 60) * 60);
-  if (away) {
-    ui.gaugeNote.textContent = reading.absence_unusual
-      ? "She went out as the quiet began, so it does not count against her. She has been out longer than she usually is."
-      : "She went out as the quiet began, so it does not count against her.";
-  } else {
-    ui.gaugeNote.textContent =
-      "When a quiet spell starts around " + startHour + " on a " + day.daytype +
-      ", hers normally runs no longer than " + reading.threshold_text + ".";
-  }
-}
-
-/* Heat grid */
-
-function orderedDevices(day) {
-  const inside = day.devices.filter((d) => d.zone_class !== "transit");
-  const doors = day.devices.filter((d) => d.zone_class === "transit");
-  return { inside, doors };
-}
-
-function heatRow(day, device, minute) {
-  const hourNow = Math.floor(minute / 60);
-  const rates = day.baseline.rhythm[device.device_id] || [];
-  const cells = [el("div", { class: "label", title: device.name },
-    device.name,
-    el("small", { text: device.zone_class === "transit" ? "door" : "inside" }))];
-
-  for (let hour = 0; hour < 24; hour += 1) {
-    const from = hour * 60;
-    const upTo = Math.min(from + 60, minute + 0.001);
-    const rate = rates[hour] || 0;
-    const seen = from <= minute && (day.byHour[device.device_id][hour] || []).some((m) => m <= minute);
-    const down = from <= minute && isDown(day, device.device_id, from, upTo);
-    const classes = ["cell"];
-    if (from > minute) classes.push("future");
-    if (hour === hourNow) classes.push("current");
-    if (seen) classes.push("seen");
-    if (down) classes.push("down");
-
-    const tip = device.name + ", " + pad(hour) + ":00. Usually active on " +
-      Math.round(rate * 100) + "% of " + day.daytype + "s." +
-      (down ? " Camera offline." : seen ? " Active today." : "");
-    cells.push(el("div", { class: classes.join(" "), style: "--rate:" + rate, title: tip }));
-  }
-  return cells;
-}
-
-function renderHeat(day, reading) {
-  const minute = reading.minute;
-  const hourNow = Math.floor(minute / 60);
-  const { inside, doors } = orderedDevices(day);
-
-  const header = [el("div", { class: "label" })];
-  for (let hour = 0; hour < 24; hour += 1) {
-    header.push(el("div", { class: "hour" + (hour === hourNow ? " current" : ""), text: pad(hour) }));
+  function clockOf(mins) {
+    var whole = Math.max(0, Math.min(DAY - 1, Math.round(mins)));
+    var hh = Math.floor(whole / 60);
+    var mm = whole % 60;
+    return (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm;
   }
 
-  ui.heat.replaceChildren(
-    ...header,
-    ...inside.flatMap((device) => heatRow(day, device, minute)),
-    el("div", { class: "divider" }),
-    ...doors.flatMap((device) => heatRow(day, device, minute)));
-}
-
-/* Normal */
-
-function anchorStatus(day, anchor, reading) {
-  const missed = reading.missed_anchors.some((m) =>
-    m.device_id === anchor.device_id && m.window === anchor.window);
-  if (missed) return "missed";
-
-  const minute = reading.minute;
-  const ids = anchor.device_id === "any_interior"
-    ? day.devices.filter((d) => d.zone_class !== "transit").map((d) => d.device_id)
-    : [anchor.device_id];
-  const kept = ids.some((id) => (day.today[id] || []).some((m) =>
-    m >= anchor.low && m < anchor.high && m <= minute));
-  if (kept) return "kept";
-  if (anchor.device_id !== "any_interior" && anchor.low <= minute &&
-      isDown(day, anchor.device_id, anchor.low, Math.min(anchor.high, minute + 0.001))) {
-    return "blind";
-  }
-  return anchor.minute > minute ? "later" : "waiting";
-}
-
-const ANCHOR_WORDS = {
-  kept: "done",
-  missed: "missed",
-  later: "later",
-  waiting: "not yet",
-  blind: "camera off",
-};
-
-const PAST_HABITS = 5;
-const NEXT_HABITS = 3;
-
-function habitual(anchors) {
-  // Anchors on the whole house after the morning only restate a room anchor a
-  // few minutes away, and a room anchor at the same moment as getting up is
-  // the same fact twice. Keep the list to things a person would say.
-  const rise = anchors.find((a) => a.device_id === "any_interior" && a.window === "morning");
-  return anchors.filter((a) => {
-    if (a.device_id === "any_interior") return a === rise;
-    return !(rise && Math.abs(a.minute - rise.minute) < 5);
-  });
-}
-
-function howOften(rate, daytype) {
-  if (rate >= 0.99) return "every " + daytype;
-  if (rate >= 0.9) return "almost every " + daytype;
-  return "most " + daytype + "s";
-}
-
-function renderNormal(day, reading) {
-  const base = day.baseline;
-  const observed = Object.values(base.days_observed).reduce((a, b) => a + b, 0);
-  ui.learnedFrom.textContent =
-    "Learned from " + observed + " days of her history. " + base.excluded_absences +
-    " quiet spells that began with her going out were left out, since an empty house says nothing about her.";
-
-  const habits = habitual(base.anchors);
-  if (!habits.length) {
-    ui.anchors.replaceChildren(el("li", { text: "Not enough history yet to know her habits." }));
-  } else {
-    const past = habits.filter((a) => a.minute <= reading.minute).slice(-PAST_HABITS);
-    const next = habits.filter((a) => a.minute > reading.minute).slice(0, NEXT_HABITS);
-    ui.anchors.replaceChildren(...[...past, ...next].map((anchor) => {
-      const status = anchorStatus(day, anchor, reading);
-      const where = anchor.device_id === "any_interior"
-        ? "Up and about"
-        : "In the " + (day.names[anchor.device_id] || anchor.device_id);
-      return el("li", { class: status },
-        el("time", { text: anchor.usual }),
-        el("span", {}, where, el("span", { class: "often", text: howOften(anchor.hit_rate, day.daytype) })),
-        el("span", { class: "state-word", text: ANCHOR_WORDS[status] }));
-    }));
+  function firstLine(text) {
+    return String(text || "").split(/\r?\n/)[0];
   }
 
-  const values = base.quiet.map((v) => v || 0);
-  const top = Math.max(...values, 1);
-  const focus = reading.began_minute !== null
-    ? Number(clock(reading.began_minute).slice(0, 2))
-    : Math.floor(reading.minute / 60);
-  ui.quietbars.replaceChildren(...values.map((value, hour) =>
-    el("div", {
-      class: "bar" + (hour === focus ? " current" : ""),
-      style: "height:" + Math.max(2, Math.sqrt(value / top) * 100) + "%",
-      title: pad(hour) + ":00, up to " + base.quiet_text[hour],
-    })));
-}
-
-/* Messages */
-
-const TONES = { urgent: "Urgent", low: "Not urgent", info: "All clear" };
-const MAX_MESSAGES = 4;
-
-function outbox(day, minute, labelled) {
-  const sent = (day.notifications || []).filter((n) => n.minute <= minute).reverse();
-  const group = el("div", { class: "outbox" },
-    labelled ? el("p", { class: "outbox-title", text: day.scenario.title }) : null);
-
-  if (!sent.length) {
-    group.append(el("p", { class: "silent", text: "Nothing sent. Nothing has needed saying." }));
-    return group;
+  function sentenceCase(text) {
+    var value = String(text || "");
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
   }
 
-  const list = el("ul", { class: "messages" });
-  sent.slice(0, MAX_MESSAGES).forEach((notice, index) => {
-    const lead = notice.body.split("\n")[0];
-    list.append(el("li", { class: "message" + (index === 0 ? " newest" : ""), "data-urgency": notice.urgency },
-      el("div", { class: "message-top" },
-        el("time", { text: clock(notice.minute) }),
-        el("span", { class: "message-tone", text: TONES[notice.urgency] || notice.urgency })),
-      el("p", { class: "message-subject", text: notice.subject.replace(/^Stillwatch: /, "") }),
-      el("p", { class: "message-lead", text: lead })));
-  });
-  group.append(list);
-  if (sent.length > MAX_MESSAGES) {
-    group.append(el("p", { class: "message-more",
-      text: (sent.length - MAX_MESSAGES) + " earlier " + (sent.length - MAX_MESSAGES === 1 ? "message" : "messages") }));
+  // The same wording the engine uses, so a counting number never disagrees
+  // with the sentence above it.
+  function humanDuration(seconds) {
+    if (seconds === null || seconds === undefined) { return "unknown"; }
+    var minutes = Math.round(seconds / 60);
+    if (minutes < 60) { return minutes + " min"; }
+    var hours = Math.floor(minutes / 60);
+    var rest = minutes % 60;
+    if (rest === 0) { return hours + "h"; }
+    return hours + "h " + (rest < 10 ? "0" : "") + rest + "m";
   }
-  return group;
-}
 
-function renderMessages(shown, minute) {
-  ui.messages.replaceChildren(...shown.map((day) => outbox(day, minute, shown.length > 1)));
-}
+  /* ---------- movement that carries meaning ---------- */
 
-/* Devices */
+  var calmly = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var lastSeconds = null;
+  var counting = null;
+  var countGuard = null;
+  var sweepTimer = null;
 
-function renderDevices(day, reading) {
-  const minute = reading.minute;
-  const { inside, doors } = orderedDevices(day);
-  ui.devices.replaceChildren(...[...inside, ...doors].map((device) => {
-    const down = isDown(day, device.device_id, minute, minute + 0.001);
-    const seen = (day.today[device.device_id] || []).filter((m) => m <= minute).length;
-    return el("li", { class: down ? "down" : "" },
-      el("span", { class: "dot", "aria-hidden": "true" }),
-      el("span", {},
-        device.name,
-        el("span", { class: "kind", text: device.zone_class === "transit" ? "At a door" : "Inside the house" })),
-      el("span", { class: "count", text: down ? "Offline" : seen + " today" }));
-  }));
-}
+  function countTo(node, seconds, text) {
+    if (counting) { cancelAnimationFrame(counting); counting = null; }
+    clearTimeout(countGuard);
 
-/* Rendering */
-
-function days() {
-  const list = [view.days[view.primary]];
-  if (view.second && view.days[view.second]) list.push(view.days[view.second]);
-  return list.filter(Boolean);
-}
-
-function render() {
-  const shown = days();
-  if (!shown.length) return;
-  const main = shown[0];
-  const reading = current(main);
-
-  ui.clock.textContent = clock(reading.minute);
-  const atEnd = view.index >= main.readings.length - 1;
-  ui.dayLabel.textContent = main.live && atEnd
-    ? "Live, " + main.weekday + " " + main.day
-    : main.weekday + " " + main.day;
-  if (main.live) view.following = atEnd;
-  ui.time.value = String(view.index);
-
-  renderStatus(shown);
-  moveStrips();
-  renderGauge(main, reading);
-  renderHeat(main, reading);
-  renderNormal(main, reading);
-  renderDevices(main, reading);
-  renderMessages(shown, reading.minute);
-  syncUrl();
-}
-
-function setIndex(index) {
-  const last = Math.min(...days().map((day) => day.readings.length - 1));
-  view.index = Math.max(0, Math.min(last, index));
-  render();
-}
-
-/* Playback */
-
-function stop() {
-  clearInterval(view.timer);
-  view.timer = null;
-  ui.play.setAttribute("aria-pressed", "false");
-  ui.playLabel.textContent = "Play the day";
-  ui.playIcon.setAttribute("d", "M4 2.5v11l9-5.5z");
-}
-
-function play() {
-  const last = Number(ui.time.max);
-  if (view.index >= last) setIndex(0);
-  clearInterval(view.timer);
-  view.timer = setInterval(() => {
-    if (view.index >= Number(ui.time.max)) {
-      stop();
+    var jump = lastSeconds === null || seconds === null || seconds === undefined
+      || Math.abs(seconds - lastSeconds) < 60;
+    if (!calmly || timer !== null || jump) {
+      node.textContent = text;
+      lastSeconds = seconds;
       return;
     }
-    setIndex(view.index + 1);
-  }, PACE_MS / Number(ui.speed.value));
-  ui.play.setAttribute("aria-pressed", "true");
-  ui.playLabel.textContent = "Pause";
-  ui.playIcon.setAttribute("d", "M4 2.5h3v11H4zM9 2.5h3v11H9z");
-}
 
-function toggle() {
-  if (view.timer) stop();
-  else play();
-}
+    var from = lastSeconds;
+    var span = seconds - from;
+    var began = performance.now();
 
-/* Address bar */
+    function land() {
+      if (counting) { cancelAnimationFrame(counting); counting = null; }
+      clearTimeout(countGuard);
+      node.textContent = text;
+      lastSeconds = seconds;
+    }
 
-function syncUrl() {
-  const params = new URLSearchParams();
-  params.set("scenario", view.primary);
-  if (view.second) params.set("compare", view.second);
-  const main = view.days[view.primary];
-  if (main) params.set("t", clock(current(main).minute));
-  history.replaceState(null, "", "?" + params.toString());
-}
+    function step(now) {
+      var share = Math.min(1, (now - began) / 460);
+      if (share >= 1) { land(); return; }
+      node.textContent = humanDuration(from + span * (1 - Math.pow(1 - share, 3)));
+      counting = requestAnimationFrame(step);
+    }
 
-function readUrl() {
-  const params = new URLSearchParams(location.search);
-  const keys = view.scenarios.map((s) => s.key);
-  const wanted = params.get("scenario");
-  view.primary = keys.includes(wanted) ? wanted : keys[0];
-  const other = params.get("compare");
-  view.second = keys.includes(other) && other !== view.primary ? other : "";
-  const t = params.get("t");
-  if (t && /^\d{1,2}:\d{2}$/.test(t)) {
-    const [h, m] = t.split(":").map(Number);
-    view.index = Math.floor((h * 60 + m) / 5);
-  }
-}
-
-/* Loading */
-
-function fillPickers() {
-  ui.scenario.replaceChildren(...view.scenarios.map((s) =>
-    el("option", { value: s.key, text: s.title })));
-  ui.compare.replaceChildren(
-    el("option", { value: "", text: "Nothing" }),
-    ...view.scenarios.map((s) => el("option", { value: s.key, text: s.title })));
-  ui.scenario.value = view.primary;
-  ui.compare.value = view.second;
-}
-
-async function load() {
-  stop();
-  ui.app.setAttribute("aria-busy", "true");
-  try {
-    await loadDay(view.primary);
-    if (view.second) await loadDay(view.second);
-  } catch (error) {
-    showEmpty("Could not load that replay. " + error.message);
-    return;
+    counting = requestAnimationFrame(step);
+    // Frames stop arriving when the tab is not being drawn, which would leave
+    // the old number on screen. Timers keep running, so one lands it anyway.
+    countGuard = setTimeout(land, 700);
   }
 
-  const shown = days();
-  const last = Math.min(...shown.map((day) => day.readings.length - 1));
-  ui.time.max = String(last);
-  buildStrips(shown);
-
-  const main = shown[0];
-  ui.home.textContent = main.persona + "'s home";
-  ui.footnote.textContent = main.live
-    ? "Live from Ring, refreshed every minute. Times are the household's own clock."
-    : "Replaying simulated data for " + main.persona + ". Times are the household's own clock.";
-
-  clearInterval(view.refresh);
-  if (main.live) {
-    view.following = true;
-    view.index = last;
-    view.refresh = setInterval(refreshLive, 60000);
+  function settle(quietly) {
+    if (quietly || !calmly) {
+      ui.app.setAttribute("data-ready", "1");
+      return;
+    }
+    ui.app.removeAttribute("data-ready");
+    void ui.app.offsetWidth;
+    ui.app.setAttribute("data-ready", "1");
   }
 
-  ui.app.setAttribute("aria-busy", "false");
-  setIndex(view.index);
-}
-
-async function refreshLive() {
-  // Today keeps happening, so ask again and stay at the present unless the
-  // viewer has scrubbed back to look at something.
-  delete view.days[view.primary];
-  const wasAtEnd = view.following;
-  await load();
-  if (wasAtEnd) setIndex(Number(ui.time.max));
-}
-
-async function start() {
-  let listing;
-  try {
-    listing = await getJSON("/api/scenarios");
-  } catch (error) {
-    showEmpty("Could not reach the Stillwatch service. Is it running?");
-    return;
+  function sweep(quietly) {
+    // A live refresh must not redraw the day every minute.
+    if (quietly || !calmly) { return; }
+    ui.chart.removeAttribute("data-draw");
+    void ui.chart.offsetWidth;
+    ui.chart.setAttribute("data-draw", "1");
+    clearTimeout(sweepTimer);
+    sweepTimer = setTimeout(function () {
+      ui.chart.removeAttribute("data-draw");
+    }, 1700);
   }
 
-  view.scenarios = listing.scenarios;
-  if (!view.scenarios.length) {
-    showEmpty("No replay data yet. From the project folder run: python demo_data.py");
-    return;
+  function entryFor(key) {
+    for (var i = 0; i < entries.length; i += 1) {
+      if (entries[i].key === key) { return entries[i]; }
+    }
+    return null;
   }
 
-  readUrl();
-  fillPickers();
-  await load();
-}
+  /* ---------- light and dark ---------- */
 
-/* Wiring */
-
-ui.scenario.addEventListener("change", () => {
-  view.primary = ui.scenario.value;
-  if (view.second === view.primary) {
-    view.second = "";
-    ui.compare.value = "";
+  function theme() {
+    var saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (error) { saved = null; }
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.dataset.theme = saved;
+    }
+    ui.theme.addEventListener("click", function () {
+      var dark = document.documentElement.dataset.theme
+        ? document.documentElement.dataset.theme === "dark"
+        : matchMedia("(prefers-color-scheme: dark)").matches;
+      var next = dark ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem(THEME_KEY, next); } catch (error) { /* private window */ }
+    });
   }
-  load();
-});
 
-ui.compare.addEventListener("change", () => {
-  view.second = ui.compare.value === view.primary ? "" : ui.compare.value;
-  ui.compare.value = view.second;
-  load();
-});
+  /* ---------- loading ---------- */
 
-ui.time.addEventListener("input", () => {
-  stop();
-  setIndex(Number(ui.time.value));
-});
+  function fail(message) {
+    ui.app.setAttribute("aria-busy", "false");
+    ui.empty.hidden = false;
+    ui.empty.textContent = message;
+  }
 
-ui.play.addEventListener("click", toggle);
+  function boot() {
+    theme();
 
-ui.speed.addEventListener("change", () => {
-  if (view.timer) play();
-});
+    Promise.all([
+      fetch("/api/scenarios").then(function (reply) { return reply.json(); }),
+      fetch("/api/health").then(function (reply) { return reply.json(); })
+        .catch(function () { return {}; })
+    ]).then(function (both) {
+      var index = both[0];
+      var health = both[1] || {};
 
-ui.strips.addEventListener("click", (event) => {
-  const box = ui.strips.getBoundingClientRect();
-  const share = (event.clientX - box.left) / box.width;
-  stop();
-  setIndex(Math.round(share * Number(ui.time.max)));
-});
+      ui.home.textContent = index.persona || "The household";
+      entries = index.scenarios || [];
 
-document.addEventListener("keydown", (event) => {
-  const target = event.target;
-  if (target instanceof HTMLSelectElement || target === ui.time) return;
-  if (event.key === " ") {
-    event.preventDefault();
-    toggle();
-  } else if (event.key === "ArrowRight") {
+      if (!entries.length) {
+        fail("No days to show yet. Once cameras are connected this fills in on its own.");
+        return;
+      }
+
+      var liveEntry = entryFor("live");
+      ui.livePill.hidden = !liveEntry;
+      ui.dayField.hidden = entries.length < 2;
+
+      entries.forEach(function (entry) {
+        var option = el("option", null,
+          (entry.title || entry.key) + (entry.demo ? " (demonstration)" : ""));
+        option.value = entry.key;
+        ui.scenario.appendChild(option);
+      });
+
+      var wanted = param("scenario");
+      var chosen = entryFor(wanted) ? wanted : entries[0].key;
+      ui.scenario.value = chosen;
+
+      // A home connected this morning has nothing to show. Say so properly
+      // rather than drawing six empty boxes.
+      if (liveEntry && chosen === "live" && !health.stored_events) {
+        standby(health);
+        return;
+      }
+
+      load(chosen);
+      if (liveEntry && !refresher) {
+        refresher = setInterval(function () { load(ui.scenario.value, true); }, 60000);
+      }
+    }).catch(function () {
+      fail("Could not reach Stillwatch. Is the service running?");
+    });
+  }
+
+  function standby(health) {
+    ui.app.dataset.mode = "standby";
+    ui.app.setAttribute("aria-busy", "false");
+    ui.standby.hidden = false;
+    ui.empty.hidden = true;
+    settle(false);
+    document.documentElement.style.setProperty("--state", "var(--normal)");
+
+    var rows = [
+      ["Service", health.ok ? "running" : "unreachable", health.ok],
+      ["Webhook", health.webhook ? "ready" : "no key yet", health.webhook],
+      ["Ring account", health.ring_linked ? "linked" : "not linked yet", health.ring_linked],
+      ["Events stored", String(health.stored_events || 0), Boolean(health.stored_events)]
+    ];
+
+    ui.facts.textContent = "";
+    rows.forEach(function (row) {
+      var box = el("div", "fact");
+      box.dataset.good = row[2] ? "1" : "0";
+      box.appendChild(el("dt", null, row[0]));
+      box.appendChild(el("dd", null, row[1]));
+      ui.facts.appendChild(box);
+    });
+
+    var demos = entries.filter(function (entry) { return entry.demo; });
+    ui.seeDemo.hidden = !demos.length;
+  }
+
+  function leaveStandby() {
+    ui.app.dataset.mode = "";
+    ui.standby.hidden = true;
+  }
+
+  function load(key, quietly) {
+    var entry = entryFor(key);
+    leaveStandby();
+
+    ui.banner.hidden = !(entry && entry.demo);
+    if (entry && entry.demo) {
+      ui.banner.textContent = "";
+      ui.banner.appendChild(el("strong", null, "A recorded day."));
+      ui.banner.appendChild(document.createTextNode(
+        " Shown so you can see how Stillwatch reads one. Nothing here came from this home."));
+    }
+
+    if (!quietly) {
+      ui.app.setAttribute("aria-busy", "true");
+      lastSeconds = null;
+      stop();
+    }
+
+    fetch("/api/day?scenario=" + encodeURIComponent(key))
+      .then(function (reply) {
+        if (!reply.ok) { throw new Error("no day"); }
+        return reply.json();
+      })
+      .then(function (bundle) {
+        day = bundle;
+        ui.empty.hidden = true;
+        draw();
+        ui.app.setAttribute("aria-busy", "false");
+        settle(quietly);
+        sweep(quietly);
+      })
+      .catch(function () { fail("Could not load that day."); });
+  }
+
+  /* ---------- drawing the parts that do not move ---------- */
+
+  function draw() {
+    var readings = day.readings || [];
+    if (!readings.length) {
+      fail(day.live
+        ? "Connected and waiting. Nothing has come through from the cameras yet today."
+        : "Nothing recorded for this day.");
+      return;
+    }
+
+    var last = readings[readings.length - 1].minute;
+    ui.time.max = String(Math.round(last));
+    ui.time.step = String(day.step_minutes || 5);
+
+    drawRibbon(readings);
+    drawTracks();
+    drawMessages();
+    drawQuiet();
+    drawDevices();
+    drawFootnote();
+
+    var ladder = day.ladder || {};
+    if (ladder.alert_at) {
+      var quietMark = document.querySelector(".mark-quiet");
+      var concernMark = document.querySelector(".mark-concern");
+      if (quietMark) { quietMark.style.left = (ladder.quiet_at / ladder.alert_at) * 100 + "%"; }
+      if (concernMark) { concernMark.style.left = (ladder.concern_at / ladder.alert_at) * 100 + "%"; }
+    }
+
+    var wanted = param("t");
+    var start = last;
+    if (wanted && /^\d{1,2}:\d{2}$/.test(wanted)) {
+      var bits = wanted.split(":");
+      start = Math.min(last, Number(bits[0]) * 60 + Number(bits[1]));
+    } else if (!day.live && day.notifications && day.notifications.length) {
+      start = day.notifications[0].minute;
+    }
+    show(following || !day.live ? start : minute);
+  }
+
+  function drawRibbon(readings) {
+    ui.ribbon.textContent = "";
+    var step = day.step_minutes || 5;
+    var run = null;
+
+    readings.forEach(function (reading) {
+      if (run && run.state === reading.state) {
+        run.end = reading.minute + step;
+        return;
+      }
+      if (run) { ui.ribbon.appendChild(segment(run)); }
+      run = { state: reading.state, start: reading.minute, end: reading.minute + step };
+    });
+    if (run) { ui.ribbon.appendChild(segment(run)); }
+  }
+
+  function segment(run) {
+    var node = el("span", "seg");
+    node.dataset.state = run.state;
+    node.style.animationDelay = (pct(run.start) / 100) * 0.55 + "s";
+    node.style.left = pct(run.start) + "%";
+    node.style.width = Math.max(0.12, pct(run.end) - pct(run.start)) + "%";
+    node.title = WORDS[run.state] + ", " + clockOf(run.start) + " to " + clockOf(run.end);
+    return node;
+  }
+
+  function drawTracks() {
+    ui.tracks.textContent = "";
+    var today = day.today || {};
+    var dings = day.dings || [];
+    var outages = day.outages || [];
+
+    (day.devices || []).forEach(function (device) {
+      var row = el("div", "trk");
+      row.dataset.device = device.device_id;
+
+      var name = el("span", "trk-name");
+      name.appendChild(el("span", null, device.name));
+      name.appendChild(el("em", null, device.zone_class === "transit" ? "way out" : "inside"));
+      row.appendChild(name);
+
+      var rail = el("div", "rail");
+
+      outages.forEach(function (span) {
+        if (span.device_id !== device.device_id) { return; }
+        var off = el("span", "off");
+        off.style.animationDelay = (pct(span.from) / 100) * 0.7 + 0.2 + "s";
+        off.style.left = pct(span.from) + "%";
+        off.style.width = Math.max(0.15, pct(span.to) - pct(span.from)) + "%";
+        off.title = "Offline " + clockOf(span.from) + " to " + clockOf(span.to);
+        rail.appendChild(off);
+      });
+
+      (today[device.device_id] || []).forEach(function (at) {
+        var tick = el("span", "tick");
+        tick.style.animationDelay = (pct(at) / 100) * 0.7 + 0.2 + "s";
+        tick.style.left = pct(at) + "%";
+        tick.title = "Movement at " + clockOf(at);
+        rail.appendChild(tick);
+      });
+
+      dings.forEach(function (ding) {
+        if (ding.device_id !== device.device_id) { return; }
+        var mark = el("span", "ding");
+        mark.style.animationDelay = (pct(ding.minute) / 100) * 0.7 + 0.2 + "s";
+        mark.style.left = pct(ding.minute) + "%";
+        mark.title = "Door at " + clockOf(ding.minute);
+        rail.appendChild(mark);
+      });
+
+      row.appendChild(rail);
+      ui.tracks.appendChild(row);
+    });
+  }
+
+  function drawMessages() {
+    ui.messages.textContent = "";
+    var notices = day.notifications || [];
+
+    ui.messageCount.textContent = notices.length ? notices.length + " sent" : "";
+
+    if (!notices.length) {
+      ui.messages.appendChild(el("p", "msg-none",
+        "Nothing was worth sending. A quiet day means a silent phone."));
+      return;
+    }
+
+    notices.forEach(function (notice) {
+      var card = el("div", "msg");
+      card.dataset.u = notice.urgency;
+
+      var top = el("div", "msg-top");
+      top.appendChild(el("span", "msg-time", clockOf(notice.minute)));
+      top.appendChild(el("span", "msg-tag", notice.urgency));
+      card.appendChild(top);
+
+      card.appendChild(el("p", "msg-subject",
+        sentenceCase(String(notice.subject || "").replace(/^Stillwatch:\s*/, ""))));
+      card.appendChild(el("p", "msg-body", firstLine(notice.body)));
+
+      card.tabIndex = 0;
+      card.addEventListener("click", function () { stop(); show(notice.minute); });
+      card.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          stop();
+          show(notice.minute);
+        }
+      });
+
+      ui.messages.appendChild(card);
+    });
+  }
+
+  function drawQuiet() {
+    ui.quietbars.textContent = "";
+    var quiet = (day.baseline || {}).quiet || [];
+    var text = (day.baseline || {}).quiet_text || [];
+    var top = Math.max.apply(null, quiet.concat([1]));
+
+    quiet.forEach(function (seconds, hour) {
+      var bar = el("div", "bar");
+      // Square root keeps a half hour of daytime quiet visible next to eight
+      // hours of night. The exact figure is on the bar itself.
+      var height = top > 0 ? Math.sqrt(seconds / top) * 100 : 0;
+      bar.style.height = Math.max(2, height) + "%";
+      bar.dataset.hour = String(hour);
+      bar.title = clockOf(hour * 60) + " onwards, up to " + (text[hour] || "no data");
+      ui.quietbars.appendChild(bar);
+    });
+  }
+
+  function drawDevices() {
+    ui.devices.textContent = "";
+    (day.devices || []).forEach(function (device) {
+      var row = el("li");
+      row.dataset.device = device.device_id;
+      row.appendChild(el("span", "dev-dot"));
+      row.appendChild(el("span", "dev-name", device.name));
+      row.appendChild(el("span", "dev-zone",
+        device.zone_class === "transit" ? "way out" : "inside"));
+      ui.devices.appendChild(row);
+    });
+  }
+
+  function drawFootnote() {
+    var observed = 0;
+    var days = (day.baseline || {}).days_observed || {};
+    Object.keys(days).forEach(function (key) { observed += days[key]; });
+
+    var parts = [];
+    parts.push(day.live
+      ? "Live from the cameras themselves"
+      : "Replaying " + String(day.scenario.title || day.scenario.key).toLowerCase());
+    parts.push(day.weekday + " " + day.day);
+    if (observed) { parts.push("judged against " + observed + " days of her own history"); }
+    parts.push("times are the household's own clock");
+    ui.footnote.textContent = parts.join(". ") + ".";
+
+    var excluded = (day.baseline || {}).excluded_absences;
+    ui.learnedFrom.textContent = observed
+      ? "Learned from " + observed + " days" + (excluded
+          ? ", with " + excluded + " trips out left out so they could not stretch what counts as normal."
+          : ".")
+      : "";
+  }
+
+  /* ---------- the part that moves ---------- */
+
+  function readingAt(mins) {
+    var readings = day.readings;
+    var best = readings[0];
+    for (var i = 0; i < readings.length; i += 1) {
+      if (readings[i].minute <= mins) { best = readings[i]; } else { break; }
+    }
+    return best;
+  }
+
+  function show(mins) {
+    if (!day || !day.readings || !day.readings.length) { return; }
+    var last = day.readings[day.readings.length - 1].minute;
+    minute = Math.max(0, Math.min(last, mins));
+    ui.time.value = String(Math.round(minute));
+    ui.clock.textContent = clockOf(minute);
+    ui.needle.style.left = pct(minute) + "%";
+    paint(readingAt(minute));
+  }
+
+  function paint(reading) {
+    var state = reading.state;
+    document.documentElement.style.setProperty("--state", "var(" + TINT[state] + ")");
+    ui.hero.dataset.state = state;
+    ui.stateWord.textContent = WORDS[state] || state;
+    ui.heroClock.textContent = "as at " + clockOf(reading.minute);
+
+    ui.statement.textContent = reading.headline;
+
+    ui.reasons.textContent = "";
+    (reading.reasons || []).forEach(function (why) {
+      ui.reasons.appendChild(el("li", null, sentenceCase(why)));
+    });
+
+    paintMeter(reading);
+    paintAnchors(reading);
+    paintDevices(reading);
+
+    var began = reading.began_minute === null || reading.began_minute === undefined
+      ? Math.floor(reading.minute / 60)
+      : Math.floor(reading.began_minute / 60);
+    Array.prototype.forEach.call(ui.quietbars.children, function (bar) {
+      bar.dataset.now = Number(bar.dataset.hour) === began ? "1" : "0";
+    });
+  }
+
+  function paintMeter(reading) {
+    var alertAt = (day.ladder || {}).alert_at || 2.5;
+    var out = reading.state === "AWAY";
+
+    ui.meterLabel.textContent = out ? "Out for" : "Still for";
+    countTo(ui.meterValue, reading.silence_seconds,
+            reading.silence_text || "no time at all");
+
+    var share = reading.ratio === null || reading.ratio === undefined
+      ? 0
+      : Math.min(1, reading.ratio / alertAt);
+    ui.fill.style.width = (share * 100) + "%";
+
+    var foot = [];
+    if (reading.state === "UNKNOWN") {
+      foot.push(UNKNOWN_WHY[reading.unknown_reason] || "Not enough to go on yet.");
+    } else if (out) {
+      foot.push(reading.departure_at
+        ? "A door opened as the quiet began, so this is time out of the house."
+        : "Away from home.");
+      if (reading.absence_unusual) { foot.push("Longer than she is usually out."); }
+    } else if (reading.threshold_text) {
+      foot.push("Normally up to " + reading.threshold_text + " at this hour.");
+    }
+    if (reading.capped_by_outage && reading.last_device_name) {
+      foot.push("Held back because the " + reading.last_device_name + " camera cannot see.");
+    }
+    ui.meterFoot.textContent = foot.join(" ");
+  }
+
+  function paintAnchors(reading) {
+    var anchors = (day.baseline || {}).anchors || [];
+    var missed = {};
+    (reading.missed_anchors || []).forEach(function (item) {
+      missed[item.device_id + "|" + item.window] = true;
+    });
+
+    ui.anchors.textContent = "";
+    if (!anchors.length) {
+      ui.anchors.appendChild(el("li", null, "No habits learned yet."));
+      return;
+    }
+
+    anchors.forEach(function (anchor) {
+      var row = el("li");
+      row.dataset.missed = missed[anchor.device_id + "|" + anchor.window] ? "1" : "0";
+      row.appendChild(el("span", "anchor-time", anchor.usual));
+
+      var what = el("span", "anchor-what");
+      what.appendChild(document.createTextNode(anchor.sentence.replace(/,\s*on .*$/, "")));
+      if (row.dataset.missed === "1") {
+        what.appendChild(el("span", "anchor-flag", "not seen yet"));
+      }
+      what.appendChild(el("small", null,
+        Math.round(anchor.hit_rate * 100) + "% of " + anchor.observed_days + " days"));
+      row.appendChild(what);
+
+      ui.anchors.appendChild(row);
+    });
+  }
+
+  function paintDevices(reading) {
+    var down = {};
+    (reading.devices_down || []).forEach(function (id) { down[id] = true; });
+    Array.prototype.forEach.call(ui.devices.children, function (row) {
+      row.dataset.down = down[row.dataset.device] ? "1" : "0";
+    });
+    Array.prototype.forEach.call(ui.tracks.children, function (row) {
+      row.dataset.down = down[row.dataset.device] ? "1" : "0";
+    });
+  }
+
+  /* ---------- playing the day ---------- */
+
+  function stop() {
+    if (timer) { clearInterval(timer); timer = null; }
+    ui.play.setAttribute("aria-pressed", "false");
+    ui.playLabel.textContent = "Play";
+    ui.playIcon.setAttribute("d", "M4.5 2.6v10.8l8.4-5.4z");
+  }
+
+  function start() {
+    if (!day || !day.readings || !day.readings.length) { return; }
+    var step = day.step_minutes || 5;
+    var last = day.readings[day.readings.length - 1].minute;
+    if (minute >= last) { show(0); }
+
+    ui.play.setAttribute("aria-pressed", "true");
+    ui.playLabel.textContent = "Pause";
+    ui.playIcon.setAttribute("d", "M4 2.6h3v10.8H4zm5 0h3v10.8H9z");
+
+    timer = setInterval(function () {
+      if (minute >= last) { stop(); return; }
+      show(minute + step);
+    }, 260 / Number(ui.speed.value || 1));
+  }
+
+  /* ---------- wiring ---------- */
+
+  ui.scenario.addEventListener("change", function () {
+    following = true;
+    load(ui.scenario.value);
+  });
+
+  ui.seeDemo.addEventListener("click", function () {
+    var demos = entries.filter(function (entry) { return entry.demo; });
+    if (!demos.length) { return; }
+    var pick = demos.filter(function (entry) { return entry.key === "fall"; })[0] || demos[0];
+    ui.scenario.value = pick.key;
+    load(pick.key);
+  });
+
+  ui.time.addEventListener("input", function () {
     stop();
-    setIndex(view.index + (event.shiftKey ? 12 : 1));
-  } else if (event.key === "ArrowLeft") {
-    stop();
-    setIndex(view.index - (event.shiftKey ? 12 : 1));
-  }
-});
+    show(Number(ui.time.value));
+    following = Number(ui.time.value) >= Number(ui.time.max);
+  });
 
-start();
+  ui.play.addEventListener("click", function () {
+    if (timer) { stop(); } else { start(); }
+  });
+
+  ui.speed.addEventListener("change", function () {
+    if (timer) { stop(); start(); }
+  });
+
+  ui.ribbon.addEventListener("click", function (event) {
+    var box = ui.ribbon.getBoundingClientRect();
+    if (!box.width) { return; }
+    stop();
+    show(((event.clientX - box.left) / box.width) * DAY);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.target !== document.body) { return; }
+    if (event.key === " ") {
+      event.preventDefault();
+      if (timer) { stop(); } else { start(); }
+    }
+  });
+
+  boot();
+})();

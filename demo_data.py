@@ -43,7 +43,7 @@ def main():
     with open(DATA / "manifest.json", "w", encoding="utf-8") as handle:
         json.dump({"devices": manifest(DEFAULT_DEVICES)}, handle, indent=2)
     with open(DATA / "scenarios.json", "w", encoding="utf-8") as handle:
-        json.dump({"persona": "Margaret", "seed": SEED, "scenarios": index}, handle, indent=2)
+        json.dump({"persona": "Margarette", "seed": SEED, "scenarios": index}, handle, indent=2)
 
     print("\nwrote %d scenarios to %s" % (len(index), DATA))
     return 0

@@ -15,3 +15,6 @@ docs/CONSTRAINTS.md
 
 # Working notes, kept off the public repo
 docs/JOURNAL.md
+
+# Local editor and tooling config
+.claude/

@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from .devices import DEFAULT_DEVICES, Device, by_id
 from .events import DING, MOTION, OFFLINE, ONLINE, Event
-from .persona import ASLEEP, MARGARET, Persona
+from .persona import ASLEEP, MARGARETTE, Persona
 
 OUT = "out"
 HALLWAY = "hallway"
@@ -82,7 +82,7 @@ def clip(blocks, start, end):
 
 
 class Simulator:
-    def __init__(self, persona=MARGARET, devices=DEFAULT_DEVICES, seed=7, tz=timezone.utc):
+    def __init__(self, persona=MARGARETTE, devices=DEFAULT_DEVICES, seed=7, tz=timezone.utc):
         self.persona = persona
         self.devices = tuple(devices)
         self.seed = seed

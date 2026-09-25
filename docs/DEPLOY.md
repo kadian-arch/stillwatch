@@ -1,171 +1,124 @@
-# Putting Stillwatch online
+# Running Stillwatch for a home
 
-Ring will not let an account be linked until four HTTPS addresses exist that we
-host, and it does not accept `localhost`. So this has to happen before any real
-event can arrive.
+Stillwatch needs a public HTTPS address before Ring will connect to it, because
+Ring delivers events to a webhook and will not accept `localhost`. Everything
+below is about getting one, and there are two ways depending on whether you
+want a server.
 
-The server runs Ubuntu with Postgres on the same machine and Caddy in front of
-it, because Caddy obtains and renews the HTTPS certificate on its own. One
-script does all of it.
+Replace `your-domain.example` throughout with a domain you control.
 
-## What you need first
+## What Ring needs from you
 
-- An AWS account with credits, which we have
-- A domain name, because a certificate cannot be issued for an `amazonaws.com`
-  address. `stillwatch.tech` from the GitHub Student Pack, or see the fallback
-  at the bottom if that is not ready
+A Ring developer app, created at the Ring developer console. Creating one issues
+three values, shown **once**:
 
-## 1. Start the server
-
-In the AWS console, go to **EC2** and choose **Launch instance**.
-
-| Setting | Value |
+| Value | Used for |
 |---|---|
-| Name | `stillwatch` |
-| Application and OS image | **Ubuntu Server 24.04 LTS**, 64-bit x86 |
-| Instance type | `t3.small` |
-| Key pair | Create one called `stillwatch`, download the `.pem`, and keep it somewhere safe |
-| Allow SSH traffic from | Anywhere |
-| Allow HTTP traffic | Ticked |
-| Allow HTTPS traffic | Ticked |
+| Client ID | identifying the app when asking for a token |
+| Client secret | proving it is really the app |
+| HMAC signature key | checking that a webhook really came from Ring |
 
-Leave everything else alone and choose **Launch instance**.
+Save all three when they appear. They cannot be shown again, and the only
+remedy is to delete the app and create another.
 
-## 2. Give it an address that will not change
+The app then needs four addresses on your own domain, which this service
+already serves:
 
-A restarted instance gets a new address, which would break DNS and the
-certificate. So:
+| Field | Route |
+|---|---|
+| Account Link URL | `/ring/link` |
+| Default Redirect URL | `/ring/linked` |
+| Token Exchange URL | `/ring/token` |
+| Webhook URL | `/ring/events` |
 
-**EC2 → Elastic IPs → Allocate Elastic IP address → Allocate.** Select it, then
-**Actions → Associate Elastic IP address**, choose the `stillwatch` instance,
-and associate.
+Ask only for motion events and doorbell presses. Stillwatch never requests
+video and cannot use it.
 
-Write that address down. Everything below refers to it.
+Those routes are public by necessity, since Ring's servers have no way to sign
+in. `/ring/events` verifies an HMAC signature on every delivery and answers 401
+without one, so the signing key is what protects it.
 
-## 3. Point the domain at it
+## Option A: a small server
 
-At your domain registrar, add one record:
+Suits a permanent installation. Ubuntu 24.04, any provider, roughly the
+smallest paid instance.
 
-| Type | Name | Value |
-|---|---|---|
-| A | `@` | the Elastic IP |
+Give the machine a fixed address, then point an `A` record for
+`your-domain.example` at it.
 
-DNS usually takes a few minutes. You can check from your own machine with
-`nslookup stillwatch.tech` until it answers with that address.
-
-## 4. Install everything
-
-**EC2 → Instances →** select `stillwatch` **→ Connect → EC2 Instance Connect →
-Connect.** A terminal opens in the browser. No keys, no SSH client.
-
-Paste these two lines:
+Then, on the machine:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kadian-arch/stillwatch/main/deploy/setup.sh -o setup.sh
+sudo bash setup.sh your-domain.example
 ```
+
+That installs Python, Postgres, the service and Caddy, generates a database
+password, and starts everything. Caddy obtains the HTTPS certificate on its
+own once the name resolves. The script asks nothing and is safe to run again,
+which is also how you update after new code lands.
+
+Settings live in `/etc/stillwatch.env`, readable only by root and never in the
+repository:
+
+```
+STILLWATCH_RING_CLIENT_ID=
+STILLWATCH_RING_CLIENT_SECRET=
+STILLWATCH_RING_WEBHOOK_SECRET=
+STILLWATCH_PERSON=
+```
+
+Then `sudo systemctl restart stillwatch`.
+
+If you have no domain yet, a hostname like `203-0-113-4.sslip.io` resolves to
+that address without a registrar and gets a real certificate.
+
+## Option B: no server
+
+A tunnel gives a machine you already own a public HTTPS address without opening
+a port or exposing its address. Useful for a single home, and the same four
+Ring addresses work.
+
+Run the service on the machine:
 
 ```bash
-sudo bash setup.sh stillwatch.tech
+python -m stillwatch serve --live --port 8420 --person "who lives here"
 ```
 
-It installs Python, Postgres, Caddy and the service itself, creates the
-database with a generated password, and starts everything. It takes two or
-three minutes and asks nothing.
+Then point a tunnel at `http://localhost:8420` and route
+`your-domain.example` to it. Cloudflare Tunnel and similar tools do this in a
+few commands.
 
-It finishes by telling you whether the service is answering.
+The tradeoff is uptime. When the machine is off, no webhooks arrive. Ring keeps
+its own history, so `python -m stillwatch backfill --days 30` fills the gap
+afterwards.
 
-## 5. Put the Ring credentials in
+## Protecting the dashboard
 
-```bash
-sudo nano /etc/stillwatch.env
+The dashboard shows when a person moves around their home. It should not be
+open to the internet.
+
+Put an authenticating proxy in front of everything except `/ring/`, which must
+stay reachable for Ring's servers. Cloudflare Access does this with two
+applications: one covering `*` that allows named email addresses, and one
+covering `ring/*` set to bypass. The more specific path wins.
+
+## Checking it works
+
 ```
-
-Fill in the three Ring lines from the developer console. The HMAC signature key
-is the one shown only once when the app was created.
-
+GET https://your-domain.example/api/health
 ```
-STILLWATCH_RING_CLIENT_ID=...
-STILLWATCH_RING_CLIENT_SECRET=...
-STILLWATCH_RING_WEBHOOK_SECRET=...
-STILLWATCH_PERSON=Margaret
-```
-
-Save with `Ctrl+O`, `Enter`, then exit with `Ctrl+X`. Then:
-
-```bash
-sudo systemctl restart stillwatch
-```
-
-This file is readable only by root and is never in the repository.
-
-## 6. Check it from outside
-
-Open `https://stillwatch.tech/api/health` in your browser. You should see
-something like:
 
 ```json
 {"ok": true, "source": "live", "webhook": true, "ring_linked": false, "stored_events": 0}
 ```
 
-`webhook: true` means the signature key is loaded and the endpoint will accept
-deliveries. `ring_linked: false` is expected until the next step.
+`webhook: true` means the signing key is loaded. `ring_linked` turns true once
+an account is connected, and history is fetched at that moment so a baseline
+exists from the start rather than weeks later.
 
-If the page does not load, the certificate may still be being issued. Wait two
-minutes and try again. If it still fails:
+## A first day
 
-```bash
-sudo journalctl -u caddy -n 30 --no-pager
-```
-
-## 7. Give Ring the four addresses
-
-In the Ring developer console, under **Account linking**:
-
-| Field | Value |
-|---|---|
-| Account Link URL | `https://stillwatch.tech/ring/link` |
-| Default Redirect URL | `https://stillwatch.tech/ring/linked` |
-| Token Exchange URL | `https://stillwatch.tech/ring/token` |
-| Webhook URL | `https://stillwatch.tech/ring/events` |
-
-For **data access and API scopes**, choose motion events and doorbell presses
-only. Nothing to do with video. We never need it, and asking for the minimum is
-part of what the product claims.
-
-## 8. Link the account, then fetch the past
-
-Once linking is complete, check `https://stillwatch.tech/api/health` again and
-`ring_linked` should be `true`. Then pull whatever history Ring already holds:
-
-```bash
-cd /opt/stillwatch && sudo -u stillwatch .venv/bin/python -m stillwatch backfill --days 30
-```
-
-It prints how many events came back and how many days they span.
-
-## Afterwards
-
-**To update the running service** after new code is pushed:
-
-```bash
-sudo bash /opt/stillwatch/deploy/setup.sh stillwatch.tech
-```
-
-It pulls the latest code and restarts. It is safe to run repeatedly and will
-not touch the settings file or the database.
-
-**To see what the service is doing:**
-
-```bash
-sudo journalctl -u stillwatch -f
-```
-
-**If the domain is not ready**, use a hostname that resolves to your address
-without any registrar, replacing the dots with dashes:
-
-```bash
-sudo bash setup.sh 13-51-22-9.sslip.io
-```
-
-That gets a real certificate and works with Ring. Switch to the proper domain
-later by running the script again with the new name.
+A newly connected home has no history, so Stillwatch says so rather than
+guessing. It needs a couple of weeks before its judgements mean much, which is
+why the first link pulls whatever Ring already holds.

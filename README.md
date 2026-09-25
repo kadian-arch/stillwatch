@@ -66,7 +66,7 @@ the same moment.
 Against real Ring events instead:
 
 ```bash
-python -m stillwatch serve --live --db events.db --person Margaret
+python -m stillwatch serve --live --db events.db --person Margarette
 ```
 
 ## Tests
@@ -95,8 +95,9 @@ runs against the simulator and against real hardware without changing.
 
 Ring requires four HTTPS addresses that the integrator hosts, so Stillwatch has
 to be deployed before a real account can be linked.
-[docs/DEPLOY.md](docs/DEPLOY.md) is the runbook: one script installs Python,
-Postgres, the service and Caddy, which obtains the certificate on its own.
+[docs/DEPLOY.md](docs/DEPLOY.md) covers both ways of getting one: a small
+server, where a single script installs Python, Postgres, the service and Caddy,
+or a tunnel from a machine you already own.
 
 ## Hackathon submission
 
