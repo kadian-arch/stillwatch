@@ -16,12 +16,12 @@
   --line: rgba(23, 20, 16, 0.11);
   --line-2: rgba(23, 20, 16, 0.06);
 
-  --normal: #0f9d6e;
-  --quiet: #2c7fd4;
-  --concern: #dd8a0b;
-  --alert: #e24a31;
-  --away: #7a5af8;
-  --unknown: #8a8279;
+  --normal: #0e9f6e;
+  --quiet: #2563eb;
+  --concern: #ca8a04;
+  --alert: #be123c;
+  --away: #7c3aed;
+  --unknown: #78716c;
 
   --state: var(--normal);
 
@@ -53,12 +53,12 @@
     --line: rgba(242, 240, 237, 0.13);
     --line-2: rgba(242, 240, 237, 0.07);
 
-    --normal: #2ad39a;
-    --quiet: #62b0f5;
-    --concern: #f5b544;
-    --alert: #ff7a5f;
-    --away: #a68bff;
-    --unknown: #9d968d;
+    --normal: #059669;
+    --quiet: #3b82f6;
+    --concern: #b8860b;
+    --alert: #e11d48;
+    --away: #8b5cf6;
+    --unknown: #78716c;
 
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.36), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
     --shadow-up: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 52px -24px rgba(0, 0, 0, 0.85);
@@ -76,12 +76,12 @@
   --faint: #706b64;
   --line: rgba(242, 240, 237, 0.13);
   --line-2: rgba(242, 240, 237, 0.07);
-  --normal: #2ad39a;
-  --quiet: #62b0f5;
-  --concern: #f5b544;
-  --alert: #ff7a5f;
-  --away: #a68bff;
-  --unknown: #9d968d;
+  --normal: #059669;
+  --quiet: #3b82f6;
+  --concern: #b8860b;
+  --alert: #e11d48;
+  --away: #8b5cf6;
+  --unknown: #78716c;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.36), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
   --shadow-up: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 52px -24px rgba(0, 0, 0, 0.85);
 }
@@ -683,14 +683,24 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
 
 .ribbon {
   position: relative;
-  height: 15px;
-  border-radius: 5px;
-  overflow: hidden;
-  background: var(--surface-2);
-  margin-bottom: 16px;
+  height: 38px;
+  margin-bottom: 18px;
   cursor: pointer;
+  border-bottom: 1px solid var(--line);
 }
-.seg { position: absolute; top: 0; bottom: 0; transform-origin: left center; }
+/* Anchored to the baseline, 4px rounded data-end, 2px of surface between
+   neighbours instead of a border drawn around each one. */
+.seg {
+  position: absolute;
+  bottom: 0;
+  height: 34%;
+  border-radius: 4px 4px 0 0;
+  transform-origin: left bottom;
+}
+.seg[data-state="QUIET"] { height: 52%; }
+.seg[data-state="CONCERN"] { height: 74%; }
+.seg[data-state="ALERT"] { height: 100%; }
+.seg[data-state="UNKNOWN"] { height: 100%; }
 
 /* The day draws itself once, left to right, so the shape of it registers
    before the colours do. Only on a new day, never on a live refresh. */
@@ -715,14 +725,23 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
   from { opacity: 0; transform: rotate(45deg) scale(0.4); }
   to { opacity: 1; transform: rotate(45deg); }
 }
-.seg[data-state="NORMAL"] { background: var(--normal); }
-.seg[data-state="QUIET"] { background: var(--quiet); }
-.seg[data-state="CONCERN"] { background: var(--concern); }
-.seg[data-state="ALERT"] { background: var(--alert); }
-.seg[data-state="AWAY"] { background: var(--away); }
+.seg[data-state="NORMAL"] { --c: var(--normal); }
+.seg[data-state="QUIET"] { --c: var(--quiet); }
+.seg[data-state="CONCERN"] { --c: var(--concern); }
+.seg[data-state="ALERT"] { --c: var(--alert); }
+.seg[data-state="AWAY"] { --c: var(--away); }
+.seg[data-state="UNKNOWN"] { --c: var(--unknown); }
+
+/* A tinted body with a saturated cap. A long stretch of alert is a large
+   area, and a large area of saturated colour reads as a warning banner
+   rather than as a chart. */
+.seg {
+  background: color-mix(in srgb, var(--c) 20%, transparent);
+  box-shadow: inset 0 3px 0 0 var(--c);
+}
 .seg[data-state="UNKNOWN"] {
   background: repeating-linear-gradient(135deg,
-    color-mix(in srgb, var(--unknown) 60%, transparent) 0 4px, transparent 4px 8px);
+    color-mix(in srgb, var(--unknown) 26%, transparent) 0 4px, transparent 4px 9px);
 }
 
 .tracks { display: grid; gap: 13px; }

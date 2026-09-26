@@ -203,3 +203,36 @@ A log file accepting a message is not a caregiver hearing it. Delivery is only
 recorded when a channel that reaches people accepts it, so a failed send is
 retried on the next assessment rather than an alert being lost to a network
 blip.
+
+---
+
+## 21. The state colours were measured, not chosen
+
+The first palette put concern and alert 14 units apart in perceptual distance.
+Anything under 15 is hard to separate even with ordinary colour vision, and
+those two states are the whole product: one means keep watching, the other
+means go round there now.
+
+They were re-stepped to a yellow and a crimson, which measure 24 apart in
+normal vision and 17 under the commonest form of colour blindness. The grey
+used for "cannot tell" reads as grey on purpose, and carries a texture so it
+is never distinguished by colour alone.
+
+*Consequence:* the amber sits below the usual contrast ratio against white.
+That is allowed only where the reader has words as well as colour, so every
+state is spelled out in the hero, in the legend, and in the tooltip on each
+segment.
+
+---
+
+## 22. Severity is height before it is colour
+
+The timeline ribbon draws normal low and alert full height, with quiet and
+concern between them. Someone can read how bad the day got from the silhouette
+with the colour removed entirely.
+
+A long alert is also a large area, and a large area of saturated colour reads
+as a warning banner rather than as a chart, so the body of each band is a
+twenty percent tint with the full colour kept for the three pixel cap along
+its top edge.
+

@@ -206,6 +206,43 @@ def cmd_backfill(args):
     return 0 if report.ok else 1
 
 
+def cmd_notify_test(args):
+    """Send one message through whatever channels the environment names."""
+    from datetime import datetime, timezone
+
+    from .notify import Notice, channels_from_env
+
+    channels = channels_from_env()
+    reaching = [c for c in channels if getattr(c, "reaches_people", True)]
+    if not reaching:
+        print("no channel that reaches anyone is configured. Set either", file=sys.stderr)
+        print("  STILLWATCH_SMTP_HOST and STILLWATCH_EMAIL_TO, or", file=sys.stderr)
+        print("  STILLWATCH_SNS_TOPIC_ARN", file=sys.stderr)
+        return 2
+
+    notice = Notice(
+        at=datetime.now(timezone.utc),
+        kind="alert",
+        urgency="urgent",
+        subject="Stillwatch: test message, no action needed",
+        body=("This is a test of the alert path for %s.\n\n"
+              "- If this reached you, a real alert would too.\n"
+              "- Nothing is wrong. Nobody needs checking on." % args.person),
+        state="ALERT",
+    )
+
+    failed = 0
+    for channel in channels:
+        try:
+            channel.send(notice)
+        except Exception as error:
+            print("  %-8s FAILED  %s: %s" % (channel.name, type(error).__name__, error))
+            failed += 1
+            continue
+        print("  %-8s sent" % channel.name)
+    return 1 if failed else 0
+
+
 def cmd_probe(args):
     """Call the real Ring API with a Playground token and report what comes back.
 
@@ -321,6 +358,15 @@ def cmd_serve(args):
         print("Stillwatch on http://%s:%d, replay" % (args.host, args.port))
         print("  %d scenarios from %s" % (len(source.scenarios()), args.data))
 
+    watcher = None
+    if args.live and args.notify:
+        from .notify import channels_from_env
+        from .watch import LiveWatcher
+
+        channels = channels_from_env()
+        watcher = LiveWatcher(store, args.person, channels).start()
+        print("  watching for silence, telling: %s" % ", ".join(watcher.channels))
+
     create_app(source, store=store, webhook_secret=secret).run(
         host=args.host, port=args.port, debug=False)
     return 0
@@ -366,6 +412,11 @@ def build_parser():
                         help="How far back to ask for. Defaults to 30 days.")
     filler.set_defaults(handler=cmd_backfill)
 
+    tester = commands.add_parser(
+        "notify-test", help="Send one test message through the configured channels.")
+    tester.add_argument("--person", default="this household")
+    tester.set_defaults(handler=cmd_notify_test)
+
     prober = commands.add_parser(
         "probe", help="Call the real Ring API with a Playground token.")
     prober.add_argument("--token", default="", help="A token from the Ring Playground.")
@@ -378,6 +429,8 @@ def build_parser():
     server.add_argument("--data", default="data", help="Folder holding the replay files.")
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8420)
+    server.add_argument("--notify", action="store_true",
+                        help="Judge the house on a timer and send real messages.")
     server.add_argument("--demo", action="store_true",
                         help="Also offer the recorded days, marked as demonstrations.")
     server.add_argument("--live", action="store_true",

@@ -20,7 +20,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 
-from .model import Device, DeviceRoster, Event, INTERIOR, parse_timestamp
+from .model import DING, Device, DeviceRoster, Event, INTERIOR, TRANSIT, parse_timestamp
 
 STATEMENTS = (
     """CREATE TABLE IF NOT EXISTS events (
@@ -136,7 +136,24 @@ class EventStore:
                 stored += max(0, cursor.rowcount)
                 cursor.close()
             self._db.commit()
+        # Ring's devices endpoint carries no device type, and its capabilities
+        # endpoint does not mention doorbells either, so a camera's name is all
+        # there is to classify on. Somebody ringing it is better evidence.
+        for event in events:
+            if event.kind == DING:
+                self.note_doorbell(event.device_id)
         return stored
+
+    def note_doorbell(self, device_id):
+        """Mark a device as watching a way in or out. Never the other way."""
+        with self._lock:
+            cursor = self._execute(
+                "UPDATE devices SET zone_class = ? WHERE device_id = ? AND zone_class <> ?",
+                (TRANSIT, device_id, TRANSIT))
+            changed = max(0, cursor.rowcount)
+            cursor.close()
+            self._db.commit()
+        return changed > 0
 
     def events(self, since=None, until=None):
         clauses, values = [], []
@@ -173,7 +190,8 @@ class EventStore:
             self._execute(
                 "INSERT INTO devices (device_id, name, zone_class) VALUES (?, ?, ?)"
                 " ON CONFLICT (device_id) DO UPDATE SET name = excluded.name,"
-                " zone_class = excluded.zone_class",
+                " zone_class = CASE WHEN devices.zone_class = 'transit'"
+                " THEN 'transit' ELSE excluded.zone_class END",
                 (device.device_id, device.name, device.zone_class),
             ).close()
             self._db.commit()

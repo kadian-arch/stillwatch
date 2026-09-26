@@ -30,11 +30,14 @@ from stillwatch.notify import (
     SUBJECT_LIMIT,
     URGENT,
     ConsoleChannel,
+    EmailChannel,
     JsonLinesChannel,
+    Notice,
     MemoryChannel,
     Notifier,
     SNSChannel,
     channels_from_env,
+    compose,
 )
 from stillwatch.rhythm import Baseline, learn
 
@@ -322,6 +325,120 @@ def test_configuration():
         check("the console shows it", "urgent" in stream.getvalue())
 
 
+class FakeSMTP:
+    """Stands in for a mail server, so the tests never touch the network."""
+
+    def __init__(self, log):
+        self.log = log
+        self.logged_in = None
+
+    def login(self, user, password):
+        self.logged_in = user
+
+    def send_message(self, message):
+        self.log.append(message)
+
+    def quit(self):
+        self.log.append("quit")
+
+
+def test_email_channel():
+    section("email reaches a caregiver")
+
+    sent = []
+    channel = EmailChannel(
+        "smtp.example.invalid", 587, "watch@example.invalid",
+        ["daughter@example.invalid", "son@example.invalid"],
+        user="watch@example.invalid", password="secret",
+        connect=lambda: FakeSMTP(sent),
+    )
+
+    judged = reading(ALERT, 560, 420)
+    subject, body, urgency = compose(ALERT_NOTICE, "Margarette", judged)
+    channel.send(Notice(at=judged.at, kind=ALERT_NOTICE, urgency=urgency,
+                        subject=subject, body=body, state=ALERT))
+
+    messages = [item for item in sent if item != "quit"]
+    check("one message went out", len(messages) == 1, str(len(messages)))
+    check("both caregivers are on it",
+          "daughter@example.invalid" in messages[0]["To"]
+          and "son@example.invalid" in messages[0]["To"])
+    check("the subject is the notice subject", messages[0]["Subject"] == subject)
+    check("the urgency travels as a header",
+          messages[0]["X-Stillwatch-Urgency"] == urgency)
+    check("the reasoning is in the body",
+          judged.reasons[0] in messages[0].get_content())
+    check("the connection is always closed", sent[-1] == "quit")
+
+    check("email counts as reaching somebody",
+          getattr(channel, "reaches_people", True) is True)
+
+
+def test_email_from_environment():
+    section("email is configured from the environment")
+
+    channels = channels_from_env({
+        "STILLWATCH_SMTP_HOST": "smtp.example.invalid",
+        "STILLWATCH_SMTP_PORT": "587",
+        "STILLWATCH_SMTP_USER": "watch@example.invalid",
+        "STILLWATCH_SMTP_PASSWORD": "secret",
+        "STILLWATCH_EMAIL_TO": "daughter@example.invalid, son@example.invalid",
+    })
+    names = [channel.name for channel in channels]
+    check("an email channel is built", "email" in names, str(names))
+    check("no console fallback is added once somebody is reachable",
+          "console" not in names, str(names))
+
+    email = [c for c in channels if c.name == "email"][0]
+    check("both addresses are split out", len(email.recipients) == 2)
+    check("the sender falls back to the account",
+          email.sender == "watch@example.invalid")
+
+    check("nothing is built without recipients",
+          "email" not in [c.name for c in channels_from_env(
+              {"STILLWATCH_SMTP_HOST": "smtp.example.invalid"})])
+
+
+def test_live_watcher():
+    section("the watcher judges with nobody looking")
+
+    from stillwatch.store import EventStore
+    from stillwatch.watch import LiveWatcher
+
+    stream, _baseline, target, _meta, _readings = day_of("fall")
+
+    folder = tempfile.mkdtemp()
+    store = EventStore(str(Path(folder) / "watch.db"))
+    store.remember_devices(roster())
+    store.add_many(stream)
+
+    channel = MemoryChannel()
+    watcher = LiveWatcher(store, "Margarette", [channel])
+
+    quiet_morning = at(target, 9, 30)
+    watcher.once(now=quiet_morning)
+    check("nothing is sent while the quiet is still normal", not channel.notices,
+          str([n.kind for n in channel.notices]))
+
+    # Well past anything she normally does at this hour.
+    for minutes in range(0, 200, 5):
+        watcher.once(now=quiet_morning + timedelta(minutes=minutes))
+
+    kinds = [notice.kind for notice in channel.notices]
+    check("a caregiver is told", bool(kinds), str(kinds))
+    check("and told it is urgent", ALERT_NOTICE in kinds, str(kinds))
+    check("the message names the room she was last seen in",
+          any("Kitchen" in notice.body for notice in channel.notices))
+
+    before = len(channel.notices)
+    watcher.once(now=quiet_morning + timedelta(minutes=205))
+    check("it does not repeat itself every five minutes",
+          len(channel.notices) == before, str(len(channel.notices)))
+
+    check("the rhythm is learned once, not every tick",
+          watcher._learned_at is not None)
+
+
 def main():
     for test in (
         test_collapse,
@@ -333,6 +450,9 @@ def main():
         test_blind_house,
         test_sns_channel,
         test_configuration,
+        test_email_channel,
+        test_email_from_environment,
+        test_live_watcher,
     ):
         test()
 

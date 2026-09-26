@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import json
 import os
+import smtplib
 import sys
+from email.message import EmailMessage
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -275,6 +277,60 @@ class JsonLinesChannel:
             handle.write(json.dumps(notice.to_dict()) + "\n")
 
 
+class EmailChannel:
+    """Sends the notice as ordinary email.
+
+    Amazon SNS is the better channel because a caregiver subscribes themselves
+    and we never hold their address. This exists so a household is not left
+    without notifications while that is unavailable.
+    """
+
+    name = "email"
+
+    def __init__(self, host, port, sender, recipients, user=None, password=None,
+                 starttls=True, timeout=20, connect=None):
+        if not host or not sender or not recipients:
+            raise ValueError("email needs a host, a sender and at least one recipient")
+        self.host = host
+        self.port = int(port)
+        self.sender = sender
+        self.recipients = list(recipients)
+        self.user = user
+        self.password = password
+        self.starttls = starttls
+        self.timeout = timeout
+        self._open = connect
+
+    def _connect(self):
+        if self._open is not None:
+            return self._open()
+        if self.port == 465:
+            return smtplib.SMTP_SSL(self.host, self.port, timeout=self.timeout)
+        server = smtplib.SMTP(self.host, self.port, timeout=self.timeout)
+        if self.starttls:
+            server.starttls()
+        return server
+
+    def send(self, notice):
+        message = EmailMessage()
+        message["From"] = self.sender
+        message["To"] = ", ".join(self.recipients)
+        message["Subject"] = notice.subject[:SUBJECT_LIMIT]
+        message["X-Stillwatch-Urgency"] = notice.urgency
+        message.set_content(notice.body)
+
+        server = self._connect()
+        try:
+            if self.user:
+                server.login(self.user, self.password or "")
+            server.send_message(message)
+        finally:
+            try:
+                server.quit()
+            except Exception:
+                pass
+
+
 class SNSChannel:
     """Publishes to an Amazon SNS topic. Caregivers subscribe to the topic by
     email or text message, so Stillwatch never holds their contact details."""
@@ -314,6 +370,19 @@ def channels_from_env(environ=None):
             region=environ.get("AWS_REGION") or environ.get("AWS_DEFAULT_REGION"),
             endpoint_url=environ.get("STILLWATCH_SNS_ENDPOINT") or None,
         ))
+    host = environ.get("STILLWATCH_SMTP_HOST", "").strip()
+    to = [a.strip() for a in environ.get("STILLWATCH_EMAIL_TO", "").split(",") if a.strip()]
+    if host and to:
+        channels.append(EmailChannel(
+            host,
+            environ.get("STILLWATCH_SMTP_PORT", "587"),
+            environ.get("STILLWATCH_EMAIL_FROM", "").strip()
+            or environ.get("STILLWATCH_SMTP_USER", "").strip(),
+            to,
+            user=environ.get("STILLWATCH_SMTP_USER", "").strip() or None,
+            password=environ.get("STILLWATCH_SMTP_PASSWORD", ""),
+        ))
+
     log = environ.get("STILLWATCH_NOTICE_LOG", "").strip()
     if log:
         channels.append(JsonLinesChannel(log))

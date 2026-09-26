@@ -96,6 +96,22 @@ def test_store():
     check("a device can be renamed", store.roster().name("kitchen") == "Kitchen Camera")
     check("renaming does not duplicate it", len(store.roster()) == 2)
 
+    # Ring tells us nothing about what a device is, so a doorbell press is the
+    # only trustworthy evidence that a camera watches a way in or out.
+    store.remember_device(Device("side", "Camera 2", INTERIOR))
+    check("an unhelpfully named camera starts inside",
+          store.roster().is_interior("side"))
+
+    store.add(Event("ding-1", "side", DING, moment(9, 30)))
+    check("a doorbell press makes it a way out", store.roster().is_transit("side"))
+
+    store.remember_device(Device("side", "Camera 2", INTERIOR))
+    check("a later device sync does not undo that",
+          store.roster().is_transit("side"))
+
+    store.add(Event("motion-1", "kitchen", MOTION, moment(9, 31)))
+    check("motion alone never promotes a camera", store.roster().is_interior("kitchen"))
+
 
 class RecordingCursor:
     def __init__(self, log):

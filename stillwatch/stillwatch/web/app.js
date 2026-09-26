@@ -382,7 +382,8 @@
     node.dataset.state = run.state;
     node.style.animationDelay = (pct(run.start) / 100) * 0.55 + "s";
     node.style.left = pct(run.start) + "%";
-    node.style.width = Math.max(0.12, pct(run.end) - pct(run.start)) + "%";
+    // 2px of surface between neighbours, rather than a border around each.
+    node.style.width = "calc(" + Math.max(0.12, pct(run.end) - pct(run.start)) + "% - 2px)";
     node.title = WORDS[run.state] + ", " + clockOf(run.start) + " to " + clockOf(run.end);
     return node;
   }
