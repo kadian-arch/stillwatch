@@ -10,6 +10,7 @@ Configuration comes from the environment, never from a file in the repository:
     DATABASE_URL                       Postgres, set by Heroku automatically
     STILLWATCH_DB                      fallback store when there is no Postgres
     STILLWATCH_SNS_TOPIC_ARN           optional, to send real notifications
+    STILLWATCH_NOTIFY                  1 to judge on a timer and send messages
 """
 
 import os
@@ -42,3 +43,18 @@ app = create_app(
     store=store,
     webhook_secret=os.environ.get("STILLWATCH_RING_WEBHOOK_SECRET", "").strip(),
 )
+
+# Nobody opens a dashboard at four in the morning, which is when it matters, so
+# the judging runs on a timer inside the web process. It is off unless asked
+# for, because a deployment with no events would otherwise start alerting about
+# its own silence. This assumes a single worker; more than one would each hold
+# their own notifier and a caregiver would hear everything twice.
+if os.environ.get("STILLWATCH_NOTIFY", "").strip() == "1":
+    from stillwatch.notify import channels_from_env
+    from stillwatch.watch import LiveWatcher
+
+    LiveWatcher(
+        store,
+        os.environ.get("STILLWATCH_PERSON", "The household"),
+        channels_from_env(),
+    ).start()

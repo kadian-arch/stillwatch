@@ -154,7 +154,8 @@ def main():
     parser.add_argument("--url", default=os.environ.get("STILLWATCH_FEED_URL",
                                                         "http://127.0.0.1:8420/ring/events"))
     parser.add_argument("--secret", default=os.environ.get("STILLWATCH_RING_WEBHOOK_SECRET", ""))
-    parser.add_argument("--db", default=os.environ.get("STILLWATCH_DB", "stillwatch/events.db"),
+    parser.add_argument("--db", default=os.environ.get("DATABASE_URL")
+                        or os.environ.get("STILLWATCH_DB", "stillwatch/events.db"),
                         help="Where the dashboard keeps its events, for the device list.")
     parser.add_argument("--seed-days", type=int, default=60,
                         help="Days of past to fill in first, so a baseline exists.")
@@ -162,6 +163,8 @@ def main():
     parser.add_argument("--speed", type=float, default=1.0,
                         help="Household seconds per real second. 1 is real time.")
     parser.add_argument("--seed", type=int, default=7, help="Simulator seed.")
+    parser.add_argument("--catch-up", action="store_true",
+                        help="Post whatever is due since the last stored event, then exit.")
     parser.add_argument("--clean", action="store_true",
                         help="Deliver exactly once and in order, which no real webhook does.")
     args = parser.parse_args()
@@ -178,6 +181,28 @@ def main():
 
     print("feeding %s" % args.url)
     print("  devices registered: %d" % register(args.db))
+
+    if args.catch_up:
+        # For a scheduled run: work out what has happened since the last event
+        # already stored, post that, and stop. Safe to run as often as you like,
+        # because anything already there is refused on its id.
+        from stillwatch.store import EventStore
+
+        last = EventStore(args.db).last_event_at()
+        now = datetime.now(timezone.utc)
+        if last is None:
+            first = now.date() - timedelta(days=args.seed_days)
+            span = args.seed_days + 1
+            print("\nnothing stored yet, filling in %d days" % args.seed_days)
+        else:
+            first = last.date()
+            span = (now.date() - first).days + 1
+            print("\ncatching up from %s" % last.isoformat(timespec="minutes"))
+
+        due = [event for event in sim.generate(first, span)
+               if event.created_at <= now and (last is None or event.created_at > last)]
+        send(args.url, secret, due, "to %s" % now.strftime("%H:%M"), rng, dup, drop)
+        return 0
 
     today = datetime.now(timezone.utc).date()
 
