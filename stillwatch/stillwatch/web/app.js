@@ -40,6 +40,7 @@
   var ui = {
     app: $("app"), empty: $("empty"), home: $("home"), theme: $("theme"),
     livePill: $("livePill"), dayField: $("dayField"), scenario: $("scenario"),
+    onField: $("onField"), onDate: $("onDate"),
     standby: $("standby"), facts: $("facts"), seeDemo: $("seeDemo"), banner: $("banner"),
     hero: $("hero"), stateWord: $("stateWord"), heroClock: $("heroClock"),
     statement: $("statement"), reasons: $("reasons"),
@@ -59,6 +60,7 @@
   var timer = null;
   var refresher = null;
   var following = true;
+  var viewing = null;
 
   /* ---------- small helpers ---------- */
 
@@ -240,14 +242,25 @@
 
       // A home connected this morning has nothing to show. Say so properly
       // rather than drawing six empty boxes.
-      if (liveEntry && chosen === "live" && !health.stored_events) {
+      if (liveEntry && chosen === "live" && !health.stored_events && !viewing) {
         standby(health);
         return;
       }
 
       load(chosen);
-      if (liveEntry && !refresher) {
-        refresher = setInterval(function () { load(ui.scenario.value, true); }, 60000);
+      if (liveEntry) {
+        var todayIso = new Date().toISOString().slice(0, 10);
+        ui.onField.hidden = false;
+        ui.onDate.max = todayIso;
+        ui.onDate.value = todayIso;
+        if (!refresher) {
+          refresher = setInterval(function () {
+            // A finished day cannot change, so only today is refreshed.
+            if (!viewing || viewing === new Date().toISOString().slice(0, 10)) {
+              load(ui.scenario.value, true);
+            }
+          }, 60000);
+        }
       }
     }).catch(function () {
       fail("Could not reach Stillwatch. Is the service running?");
@@ -305,7 +318,10 @@
       stop();
     }
 
-    fetch("/api/day?scenario=" + encodeURIComponent(key))
+    var query = "/api/day?scenario=" + encodeURIComponent(key);
+    if (viewing) { query += "&on=" + encodeURIComponent(viewing); }
+
+    fetch(query)
       .then(function (reply) {
         if (!reply.ok) { throw new Error("no day"); }
         return reply.json();
@@ -356,10 +372,10 @@
     if (wanted && /^\d{1,2}:\d{2}$/.test(wanted)) {
       var bits = wanted.split(":");
       start = Math.min(last, Number(bits[0]) * 60 + Number(bits[1]));
-    } else if (!day.live && day.notifications && day.notifications.length) {
+    } else if (!day.is_today && day.notifications && day.notifications.length) {
       start = day.notifications[0].minute;
     }
-    show(following || !day.live ? start : minute);
+    show(following || !day.is_today ? start : minute);
   }
 
   function drawRibbon(readings) {
@@ -705,6 +721,15 @@
 
   ui.scenario.addEventListener("change", function () {
     following = true;
+    load(ui.scenario.value);
+  });
+
+  ui.onDate.addEventListener("change", function () {
+    var chosen = ui.onDate.value;
+    viewing = chosen || null;
+    following = true;
+    ui.standby.hidden = true;
+    ui.app.dataset.mode = "";
     load(ui.scenario.value);
   });
 

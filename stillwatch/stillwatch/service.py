@@ -198,20 +198,26 @@ def _day_outages(events, midnight):
     return spans
 
 
-def build_day(source, key):
-    """Everything the dashboard needs for one day, computed once."""
+def build_day(source, key, on=None):
+    """Everything the dashboard needs for one day, computed once.
+
+    `on` asks for a particular date. A caregiver wants to know what yesterday
+    looked like, and a day that has already finished is walked end to end
+    rather than stopping at the present.
+    """
     meta = source.describe(key) or {"key": key, "title": key}
     events = source.events(key)
     roster = source.roster(key)
     live = bool(meta.get("live", getattr(source, "kind", "replay") == "live"))
 
+    now = datetime.now(timezone.utc)
     if live:
-        now = datetime.now(timezone.utc)
-        day = now.date()
+        day = on or now.date()
     else:
-        now = None
         target = meta.get("target_day")
-        day = date.fromisoformat(target) if target else last_covered_day(events)
+        day = on or (date.fromisoformat(target) if target else last_covered_day(events))
+    # Only today is still being written. Every other day is finished.
+    today = live and day == now.date()
 
     midnight = datetime.combine(day, time(0, 0), tzinfo=timezone.utc)
     daytype = daytype_of(midnight)
@@ -220,7 +226,7 @@ def build_day(source, key):
     # A replay walks the whole day. Live stops at the present, because the rest
     # of today has not happened yet.
     last = midnight + timedelta(minutes=DAY_MINUTES - STEP_MINUTES)
-    if live:
+    if today:
         last = min(last, now)
     readings = walk(events, baseline, roster, midnight, last, STEP_MINUTES)
 
@@ -251,7 +257,9 @@ def build_day(source, key):
         "persona": source.persona(),
         "source": getattr(source, "kind", "replay"),
         "live": live,
-        "as_of": (now or midnight + timedelta(minutes=DAY_MINUTES)).isoformat(),
+        "as_of": (now if today else midnight + timedelta(minutes=DAY_MINUTES)).isoformat(),
+        # Not "today": that key already carries this day's activity per camera.
+        "is_today": today,
         "day": day.isoformat(),
         "weekday": midnight.strftime("%A"),
         "daytype": daytype,
@@ -315,15 +323,16 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
     def known(key):
         return key in {entry["key"] for entry in source.scenarios()}
 
-    def bundle(key):
-        # Today keeps happening, so the live day is never cached. A recorded
-        # day cannot change, so it is worked out once.
-        if live and key == "live":
+    def bundle(key, on=None):
+        # Today keeps happening, so it is never cached. A day that has finished
+        # cannot change, so it is worked out once.
+        if live and key == "live" and (on is None or on == datetime.now(timezone.utc).date()):
             return build_day(source, key)
+        token = (key, on.isoformat() if on else None)
         with lock:
-            if key not in cache:
-                cache[key] = build_day(source, key)
-            return cache[key]
+            if token not in cache:
+                cache[token] = build_day(source, key, on)
+            return cache[token]
 
     @app.errorhandler(404)
     def not_found(error):
@@ -438,7 +447,17 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
         key = request.args.get("scenario", "")
         if not known(key):
             abort(404)
-        return jsonify(bundle(key))
+
+        asked = request.args.get("on", "").strip()
+        on = None
+        if asked:
+            try:
+                on = date.fromisoformat(asked)
+            except ValueError:
+                abort(400, description="on must be a date like 2026-09-25")
+            if on > datetime.now(timezone.utc).date():
+                abort(400, description="that day has not happened yet")
+        return jsonify(bundle(key, on))
 
     @app.get("/api/assess")
     def assess_at():
