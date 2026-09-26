@@ -104,6 +104,22 @@ def post(url, secret, records, timeout=20):
         return json.loads(reply.read().decode("utf-8") or "{}")
 
 
+def heartbeat(url, secret, at, device_id="front_door"):
+    """Say we are still here, even when nobody has moved.
+
+    Without this, a feed that has stopped and a person who has stopped moving
+    are indistinguishable, and the service would raise the alarm about its own
+    silence. Real Ring devices report their status the same way.
+    """
+    stamp = at.astimezone(timezone.utc).isoformat()
+    post(url, secret, [{
+        "id": "heartbeat-" + stamp,
+        "device_id": device_id,
+        "event_type": "device_online",
+        "created_at": stamp,
+    }])
+
+
 def send(url, secret, events, label, rng=None,
          duplicate_rate=DUPLICATE_RATE, drop_rate=DROP_RATE):
     """Post events in batches, reporting what the service made of them.
@@ -202,6 +218,8 @@ def main():
         due = [event for event in sim.generate(first, span)
                if event.created_at <= now and (last is None or event.created_at > last)]
         send(args.url, secret, due, "to %s" % now.strftime("%H:%M"), rng, dup, drop)
+        heartbeat(args.url, secret, now)
+        print("  heartbeat sent")
         return 0
 
     today = datetime.now(timezone.utc).date()
@@ -245,6 +263,9 @@ def main():
                 pending = [e for e in pending if e.created_at > household_now]
                 send(args.url, secret, due, household_now.strftime("%H:%M"),
                      rng, dup, drop)
+            # Every tick, moved or not, so silence is never mistaken for a
+            # broken feed.
+            heartbeat(args.url, secret, household_now)
 
             if not pending:
                 next_day = household_now.date() + timedelta(days=1)

@@ -21,7 +21,7 @@ from email.message import EmailMessage
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from .monitor import ALERT, BLIND, CONCERN, UNKNOWN
+from .monitor import ALERT, BLIND, CONCERN, NO_CONTACT, UNKNOWN
 from .narrate import Narration
 from .rhythm import human_duration
 
@@ -117,7 +117,7 @@ def compose(kind, person, reading, link=None):
         urgency = INFO
     else:
         subject = _subject("cannot see inside %s's home" % person)
-        lead = reading.headline + " Stillwatch cannot judge anything until a camera is back."
+        lead = reading.headline + " Nothing can be judged until the cameras are reachable again."
         urgency = LOW
 
     return subject, _body(lead, reading, link), urgency
@@ -176,8 +176,10 @@ class Notifier:
 
     def _decide(self, reading, episode):
         if reading.state == UNKNOWN:
-            blind = reading.unknown_reason == BLIND
-            return BLIND_NOTICE if blind and not self.blind_told else None
+            # Losing sight of the house is worth saying once. Not knowing yet,
+            # because there is no history, is not.
+            lost = reading.unknown_reason in (BLIND, NO_CONTACT)
+            return BLIND_NOTICE if lost and not self.blind_told else None
 
         if self.level and episode != self.episode:
             return ALL_CLEAR_NOTICE

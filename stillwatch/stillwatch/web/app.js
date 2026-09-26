@@ -537,11 +537,10 @@
       + ", " + clause.join(", ")
       + ". Times are the household's own clock.";
 
-    var excluded = (day.baseline || {}).excluded_absences;
     ui.learnedFrom.textContent = observed
-      ? "Learned from " + observed + " days" + (excluded
-          ? ", with " + excluded + " trips out left out so they could not stretch what counts as normal."
-          : ".")
+      ? "Built from " + observed + " days of her own routine. Time she spent out of the "
+        + "house is left out, so a trip to the shops cannot stretch what counts as a "
+        + "normal quiet spell."
       : "";
   }
 

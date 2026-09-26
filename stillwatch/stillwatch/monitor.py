@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .model import (
+    ONLINE,
     DeviceRoster,
     interior_events,
     is_down,
@@ -37,6 +38,7 @@ UNKNOWN = "UNKNOWN"
 BLIND = "blind"
 NO_HISTORY = "no_history"
 NO_BASELINE = "no_baseline"
+NO_CONTACT = "no_contact"
 
 LADDER = (NORMAL, QUIET, CONCERN, ALERT)
 STATES = LADDER + (AWAY, UNKNOWN)
@@ -50,6 +52,13 @@ MAX_ANCHOR_REASONS = 2
 # How busy a camera normally is at this hour before its silence counts as
 # explained by the camera being dead rather than by the person being still.
 BLIND_SPOT_RATE = 0.5
+
+# A camera that sees nothing sends nothing, so silence and a broken feed look
+# identical from motion alone. Where the cameras report they are alive, that
+# heartbeat is the difference: no heartbeat means we are not being told
+# anything, and a system that cannot hear must not claim somebody has stopped
+# moving. Where no heartbeat has ever arrived, nothing is assumed.
+CONTACT_GAP_SECONDS = 45 * 60
 
 # Being out much longer than usual is worth showing, not worth shouting about.
 # Somebody visiting their sister for the day must not set off a phone. Past a
@@ -242,6 +251,19 @@ def assess(events, baseline, roster, now):
     spans = outage_spans(events)
     interior_ids = roster.interior_ids()
     down = _down_now(spans, interior_ids, now)
+
+    heartbeats = [event.at for event in events if event.kind == ONLINE]
+    if heartbeats and (now - max(heartbeats)).total_seconds() > CONTACT_GAP_SECONDS:
+        quiet_for = human_duration((now - max(heartbeats)).total_seconds())
+        return _unknown(
+            now,
+            NO_CONTACT,
+            "Cannot tell. Stillwatch has not heard from the cameras for %s." % quiet_for,
+            ["The cameras report in regularly, and none has reported for %s." % quiet_for,
+             "Nothing can be judged about the household until they are reachable again.",
+             "This is a problem with the connection, not necessarily with anyone at home."],
+            down,
+        )
 
     if interior_ids and len(down) == len(interior_ids):
         return _unknown(
