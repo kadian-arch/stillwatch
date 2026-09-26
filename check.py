@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parent
 
 SUITES = (
     ("simulator", ROOT / "ring-event-simulator", "tests/test_simulator.py"),
+    ("clock", ROOT / "stillwatch", "tests/test_clock.py"),
     ("rhythm", ROOT / "stillwatch", "tests/test_rhythm.py"),
     ("monitor", ROOT / "stillwatch", "tests/test_monitor.py"),
     ("notify", ROOT / "stillwatch", "tests/test_notify.py"),

@@ -66,7 +66,14 @@ STILLWATCH_RING_CLIENT_ID=
 STILLWATCH_RING_CLIENT_SECRET=
 STILLWATCH_RING_WEBHOOK_SECRET=
 STILLWATCH_PERSON=
+STILLWATCH_TZ=Europe/London
 ```
+
+`STILLWATCH_TZ` is the home's own timezone, and it matters more than it looks.
+Every threshold is learned against the hour of the household's clock, so a
+home an hour from UTC with this unset would have each of them shifted by an
+hour. Anyone looking at the dashboard from elsewhere is told how far the two
+clocks are apart, but the times themselves always belong to the house.
 
 Then `sudo systemctl restart stillwatch`.
 

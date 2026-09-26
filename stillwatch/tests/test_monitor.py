@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+# Clocks are pinned, so a suite cannot pass or fail depending on where the
+# machine running it happens to be.
+os.environ["STILLWATCH_TZ"] = "UTC"
 sys.path.insert(0, str(ROOT.parent / "ring-event-simulator"))
 
 from ringsim import Simulator

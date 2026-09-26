@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import asdict, dataclass, field
+from .clock import local, local_date, local_hour, midnight_on
 from datetime import datetime, timedelta, timezone
 
 from .model import (
@@ -51,7 +52,7 @@ LEVELS = ("p50", "p90", "p95", "p99")
 
 
 def daytype_of(moment):
-    return WEEKEND if moment.weekday() >= 5 else WEEKDAY
+    return WEEKEND if local(moment).weekday() >= 5 else WEEKDAY
 
 
 def percentile(values, fraction):
@@ -209,11 +210,11 @@ def human_duration(seconds):
 def _full_days(events, until):
     """Complete days only. The first day always starts mid morning, and the
     last is cut wherever the stream happens to stop."""
-    dates = sorted({event.at.date() for event in events})
+    dates = sorted({local_date(event.at) for event in events})
     if not dates:
         return []
     if until is not None:
-        return [day for day in dates if day < until.date()][1:]
+        return [day for day in dates if day < local_date(until)][1:]
     return dates[1:-1] if len(dates) > 2 else dates
 
 
@@ -221,15 +222,16 @@ def _learn_activity(events, roster, days, spans):
     presence = [e for e in events if e.kind in PRESENCE_KINDS]
     seen = {}
     for event in presence:
-        seen.setdefault((event.device_id, event.at.date()), set()).add(event.at.hour)
+        seen.setdefault((event.device_id, local_date(event.at)), set()).add(
+            local_hour(event.at))
 
     tally = {}
     for device in roster:
         for day in days:
-            label = daytype_of(datetime.combine(day, datetime.min.time()))
+            label = daytype_of(midnight_on(day))
             hours = seen.get((device.device_id, day), set())
             for hour in range(24):
-                start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+                start = midnight_on(day)
                 start += timedelta(hours=hour)
                 if is_down(spans, device.device_id, start, start + timedelta(hours=1)):
                     continue
@@ -273,7 +275,7 @@ def _collect_gaps(events, roster, spans, departure_window):
         if all(is_down(spans, device_id, start, end) for device_id in interior_ids):
             continue
 
-        key = (start.date(), daytype_of(start), start.hour)
+        key = (local_date(start), daytype_of(start), local_hour(start))
 
         if lookahead > 0:
             window_open = start - timedelta(seconds=lookback)
@@ -342,7 +344,7 @@ def _learn_anchors(events, roster, days, spans):
     inside = interior_events(events, roster)
     by_day = {}
     for event in inside:
-        by_day.setdefault(event.at.date(), []).append(event)
+        by_day.setdefault(local_date(event.at), []).append(event)
 
     anchors = []
     candidates = roster.interior_ids() + [ANY_INTERIOR]
@@ -350,13 +352,13 @@ def _learn_anchors(events, roster, days, spans):
         for daytype in DAYTYPES:
             matching = [
                 day for day in days
-                if daytype_of(datetime.combine(day, datetime.min.time())) == daytype
+                if daytype_of(midnight_on(day)) == daytype
             ]
             for window, low, high in WINDOWS:
                 hits = []
                 eligible = 0
                 for day in matching:
-                    start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+                    start = midnight_on(day)
                     span_start = start + timedelta(minutes=low)
                     span_end = start + timedelta(minutes=high)
                     if device_id != ANY_INTERIOR and is_down(spans, device_id, span_start, span_end):
@@ -418,7 +420,7 @@ def learn(events, roster, until=None, departure_window=None):
 
     counts = {daytype: 0 for daytype in DAYTYPES}
     for day in days:
-        counts[daytype_of(datetime.combine(day, datetime.min.time()))] += 1
+        counts[daytype_of(midnight_on(day))] += 1
 
     return Baseline(
         days_observed=counts,

@@ -18,6 +18,7 @@ import os
 import re
 from dataclasses import dataclass
 
+from .clock import clock
 from .rhythm import human_duration
 
 DEFAULT_REGION = "us-east-1"
@@ -75,7 +76,7 @@ def facts_for(person, reading):
     lines = ["Who: %s, who lives alone." % person]
     if reading.silence_began is not None:
         lines.append("Last movement: %s, in the %s." % (
-            reading.silence_began.strftime("%H:%M"),
+            clock(reading.silence_began),
             reading.last_device_name or reading.last_device or "house"))
     if reading.silence_seconds is not None:
         lines.append("Still since then: %s." % human_duration(reading.silence_seconds))
@@ -84,7 +85,7 @@ def facts_for(person, reading):
                      % human_duration(reading.threshold_seconds))
     if reading.departure_at is not None:
         lines.append("A door opened at %s, so she may be out."
-                     % reading.departure_at.strftime("%H:%M"))
+                     % clock(reading.departure_at))
     else:
         lines.append("No door has opened since, so she is at home.")
     for anchor in reading.missed_anchors[:2]:

@@ -21,6 +21,7 @@ from email.message import EmailMessage
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from .clock import clock
 from .monitor import ALERT, BLIND, CONCERN, NO_CONTACT, UNKNOWN
 from .narrate import Narration
 from .rhythm import human_duration
@@ -78,7 +79,7 @@ class Notice:
 
 
 def _clock(moment):
-    return moment.strftime("%H:%M") if moment else "an unknown time"
+    return clock(moment) if moment else "an unknown time"
 
 
 def _subject(text):
@@ -261,7 +262,7 @@ class ConsoleChannel:
 
     def send(self, notice):
         self.stream.write("[%s %s] %s\n%s\n\n" % (
-            notice.at.strftime("%H:%M"), notice.urgency, notice.subject, notice.body))
+            clock(notice.at), notice.urgency, notice.subject, notice.body))
         self.stream.flush()
 
 

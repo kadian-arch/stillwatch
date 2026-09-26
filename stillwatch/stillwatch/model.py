@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from .clock import local, local_date, local_hour
 from datetime import datetime, timezone
 
 TRANSIT = "transit"
@@ -30,7 +31,8 @@ class Event:
 
     @property
     def minute_of_day(self) -> float:
-        return self.at.hour * 60 + self.at.minute + self.at.second / 60.0
+        here = local(self.at)
+        return here.hour * 60 + here.minute + here.second / 60.0
 
 
 @dataclass(frozen=True)
@@ -173,7 +175,8 @@ def last_covered_day(events, waking_hour=9):
     """
     latest = {}
     for event in events:
-        day = event.at.date()
+        day = local_date(event.at)
         latest[day] = max(latest.get(day, event.at), event.at)
-    covered = [day for day, last in sorted(latest.items()) if last.hour >= waking_hour]
+    covered = [day for day, last in sorted(latest.items())
+               if local_hour(last) >= waking_hour]
     return covered[-1] if covered else max(latest)

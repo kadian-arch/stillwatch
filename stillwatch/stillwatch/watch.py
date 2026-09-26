@@ -20,6 +20,7 @@ import logging
 import threading
 from datetime import datetime, timedelta, timezone
 
+from .clock import local_date, midnight_before
 from .monitor import assess
 from .notify import Notifier
 from .rhythm import learn
@@ -50,12 +51,12 @@ class LiveWatcher:
     def _refresh(self, now):
         stale = (self._learned_at is None
                  or now - self._learned_at >= self.relearn
-                 or now.date() != self._learned_at.date())
+                 or local_date(now) != local_date(self._learned_at))
         if not stale:
             return
         events = self.store.events()
         self._roster = self.store.roster()
-        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight = midnight_before(now)
         self._baseline = learn(events, self._roster, until=midnight)
         self._learned_at = now
         log.info("relearned the rhythm from %d events", len(events))

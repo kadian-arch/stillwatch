@@ -16,6 +16,14 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, request, send_from_directory
 from markupsafe import escape
 
+from .clock import (
+    clock,
+    household_tz,
+    local_date,
+    midnight_before,
+    midnight_on,
+    offset_minutes,
+)
 from .model import (
     DING,
     MOTION,
@@ -87,7 +95,7 @@ class LiveSource:
             "title": "Live now",
             "description": "Today, from the cameras themselves.",
             "expectation": None,
-            "target_day": datetime.now(timezone.utc).date().isoformat(),
+            "target_day": local_date(datetime.now(timezone.utc)).isoformat(),
         }]
 
     def describe(self, key):
@@ -212,14 +220,14 @@ def build_day(source, key, on=None):
 
     now = datetime.now(timezone.utc)
     if live:
-        day = on or now.date()
+        day = on or local_date(now)
     else:
         target = meta.get("target_day")
         day = on or (date.fromisoformat(target) if target else last_covered_day(events))
     # Only today is still being written. Every other day is finished.
-    today = live and day == now.date()
+    today = live and day == local_date(now)
 
-    midnight = datetime.combine(day, time(0, 0), tzinfo=timezone.utc)
+    midnight = midnight_on(day)
     daytype = daytype_of(midnight)
 
     baseline = learn(events, roster, until=midnight)
@@ -244,7 +252,7 @@ def build_day(source, key, on=None):
     notifier = Notifier(
         source.persona(),
         [outbox],
-        link=lambda reading: "/?scenario=%s&t=%s" % (key, reading.at.strftime("%H:%M")),
+        link=lambda reading: "/?scenario=%s&t=%s" % (key, clock(reading.at)),
     )
     for reading in readings:
         notifier.observe(reading)
@@ -262,6 +270,8 @@ def build_day(source, key, on=None):
         "is_today": today,
         "day": day.isoformat(),
         "weekday": midnight.strftime("%A"),
+        "timezone": str(household_tz()),
+        "utc_offset_minutes": offset_minutes(midnight),
         "daytype": daytype,
         "step_minutes": STEP_MINUTES,
         "ladder": {"quiet_at": QUIET_AT, "concern_at": CONCERN_AT, "alert_at": ALERT_AT},
@@ -326,7 +336,7 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
     def bundle(key, on=None):
         # Today keeps happening, so it is never cached. A day that has finished
         # cannot change, so it is worked out once.
-        if live and key == "live" and (on is None or on == datetime.now(timezone.utc).date()):
+        if live and key == "live" and (on is None or on == local_date(datetime.now(timezone.utc))):
             return build_day(source, key)
         token = (key, on.isoformat() if on else None)
         with lock:
@@ -455,7 +465,7 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
                 on = date.fromisoformat(asked)
             except ValueError:
                 abort(400, description="on must be a date like 2026-09-25")
-            if on > datetime.now(timezone.utc).date():
+            if on > local_date(datetime.now(timezone.utc)):
                 abort(400, description="that day has not happened yet")
         return jsonify(bundle(key, on))
 
@@ -472,7 +482,7 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
 
         events = source.events(key)
         roster = source.roster(key)
-        midnight = moment.replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight = midnight_before(moment)
         baseline = learn(events, roster, until=midnight)
         return jsonify(assess(events, baseline, roster, moment).to_dict())
 

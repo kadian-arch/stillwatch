@@ -7,6 +7,7 @@ Configuration comes from the environment, never from a file in the repository:
     STILLWATCH_RING_CLIENT_SECRET      from the Ring developer console
     STILLWATCH_RING_WEBHOOK_SECRET     the HMAC signature key, shown once
     STILLWATCH_PERSON                  whose home this is, for the wording
+    STILLWATCH_TZ                      the home's timezone, eg Europe/London
     DATABASE_URL                       Postgres, set by Heroku automatically
     STILLWATCH_DB                      fallback store when there is no Postgres
     STILLWATCH_SNS_TOPIC_ARN           optional, to send real notifications

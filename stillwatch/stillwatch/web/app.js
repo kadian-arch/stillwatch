@@ -524,6 +524,29 @@
     });
   }
 
+  // Times belong to the house, never to whoever is looking. A daughter in
+  // Denmark reading "no movement since 23:00" needs that to mean eleven at
+  // night in her mother's home, so the only thing translated for the viewer
+  // is the difference between the two clocks.
+  function clockNote() {
+    var here = -new Date().getTimezoneOffset();
+    var there = day.utc_offset_minutes;
+    if (there === null || there === undefined) {
+      return "Times are the household's own clock.";
+    }
+    var gap = there - here;
+    if (gap === 0) {
+      return "Times are the household's own clock, which matches yours.";
+    }
+    var hours = Math.floor(Math.abs(gap) / 60);
+    var mins = Math.abs(gap) % 60;
+    var span = (hours ? hours + (hours === 1 ? " hour" : " hours") : "")
+      + (hours && mins ? " " : "")
+      + (mins ? mins + " min" : "");
+    return "Times are the household's own clock, " + span
+      + (gap > 0 ? " ahead of yours." : " behind yours.");
+  }
+
   function drawFootnote() {
     var observed = 0;
     var days = (day.baseline || {}).days_observed || {};
@@ -534,8 +557,7 @@
     ui.footnote.textContent = (day.live
       ? "Live from the cameras themselves"
       : "Replaying " + String(day.scenario.title || day.scenario.key).toLowerCase())
-      + ", " + clause.join(", ")
-      + ". Times are the household's own clock.";
+      + ", " + clause.join(", ") + ". " + clockNote();
 
     ui.learnedFrom.textContent = observed
       ? "Built from " + observed + " days of her own routine. Time she spent out of the "

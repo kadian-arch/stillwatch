@@ -8,6 +8,7 @@ ignore it, and an alert that gets ignored is worse than no alert.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from .clock import clock, local_hour, midnight_before
 from datetime import datetime, timedelta
 
 from .model import (
@@ -121,7 +122,7 @@ class Assessment:
 
 
 def _clock(moment):
-    return moment.strftime("%H:%M")
+    return clock(moment)
 
 
 def _down_now(spans, device_ids, now):
@@ -146,7 +147,7 @@ def _missed_anchors(baseline, roster, inside, spans, now, began):
     slept through their usual morning and has been busy all afternoon is not
     made more worrying by that morning when they sit still after lunch.
     """
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight = midnight_before(now)
     minute_now = (now - midnight).total_seconds() / 60.0
     today = [event for event in inside if event.at >= midnight]
 
@@ -187,7 +188,7 @@ def _unknown(now, reason, headline, reasons, down=()):
 
 def _away_assessment(now, roster, baseline, last, departure, silence, threshold, ratio, down):
     began = last.at
-    limit = baseline.tolerated_absence(daytype_of(began), began.hour)
+    limit = baseline.tolerated_absence(daytype_of(began), local_hour(began))
     door = roster.name(departure.device_id)
 
     reasons = [
@@ -284,7 +285,7 @@ def assess(events, baseline, roster, now):
     began = last.at
     silence = (now - began).total_seconds()
     began_daytype = daytype_of(began)
-    threshold = baseline.tolerated_quiet(began_daytype, began.hour)
+    threshold = baseline.tolerated_quiet(began_daytype, local_hour(began))
 
     if threshold is None or not threshold:
         return _unknown(
@@ -293,7 +294,7 @@ def assess(events, baseline, roster, now):
             "Cannot tell yet. There is not enough history for this time of day.",
             ["Last movement was in the %s at %s." % (roster.name(last.device_id), _clock(began)),
              "A baseline for a %s at %02d:00 has not been learned."
-             % (began_daytype, began.hour)],
+             % (began_daytype, local_hour(began))],
             down,
         )
 
@@ -320,7 +321,8 @@ def assess(events, baseline, roster, now):
     # camera anywhere in the house would switch off alerting altogether.
     blind_spots = [
         device_id for device_id in down
-        if baseline.activity_rate(device_id, daytype_of(now), now.hour) >= BLIND_SPOT_RATE
+        if baseline.activity_rate(device_id, daytype_of(now), local_hour(now))
+        >= BLIND_SPOT_RATE
     ]
     capped = bool(blind_spots) and state == ALERT
     if capped:
@@ -331,7 +333,7 @@ def assess(events, baseline, roster, now):
     reasons = [
         "Last movement was in the %s at %s, %s ago."
         % (room, _clock(began), human_duration(silence)),
-        baseline.describe_quiet(began_daytype, began.hour).capitalize() + ".",
+        baseline.describe_quiet(began_daytype, local_hour(began)).capitalize() + ".",
         "No door has been used since the house went quiet, so she is at home.",
     ]
     for anchor in missed[:MAX_ANCHOR_REASONS]:
