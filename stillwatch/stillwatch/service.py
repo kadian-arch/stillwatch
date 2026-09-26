@@ -144,8 +144,8 @@ def _minute(moment, midnight):
 
 
 def _anchor_view(anchor, roster):
-    where = ("up and about" if anchor.device_id == ANY_INTERIOR
-             else "in the %s" % roster.name(anchor.device_id))
+    where = ("Up and about" if anchor.device_id == ANY_INTERIOR
+             else "The %s camera" % roster.name(anchor.device_id))
     low, high = next(((lo, hi) for name, lo, hi in WINDOWS if name == anchor.window), (0, DAY_MINUTES))
     return {
         "device_id": anchor.device_id,
@@ -157,8 +157,10 @@ def _anchor_view(anchor, roster):
         "spread_minutes": anchor.spread_minutes,
         "hit_rate": anchor.hit_rate,
         "observed_days": anchor.observed_days,
+        "where": where,
+        "daytype": anchor.daytype,
         "sentence": "%s by %s, on %d%% of %d %s days" % (
-            where[0].upper() + where[1:],
+            where,
             anchor.clock(),
             round(anchor.hit_rate * 100),
             anchor.observed_days,

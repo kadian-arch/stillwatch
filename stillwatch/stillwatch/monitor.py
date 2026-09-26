@@ -313,11 +313,17 @@ def assess(events, baseline, roster, now):
         "No door has been used since the house went quiet, so she is at home.",
     ]
     for anchor in missed[:MAX_ANCHOR_REASONS]:
-        label = "moving about" if anchor.device_id == ANY_INTERIOR else "active in the %s" % roster.name(anchor.device_id)
-        reasons.append(
-            "She is normally %s by around %s on a %s, on %d%% of days, and has not been."
-            % (label, anchor.clock(), anchor.daytype, round(anchor.hit_rate * 100))
-        )
+        share = round(anchor.hit_rate * 100)
+        if anchor.device_id == ANY_INTERIOR:
+            reasons.append(
+                "She is normally moving about by around %s, on %d%% of days, and has not been."
+                % (anchor.clock(), share))
+        else:
+            # Camera names are not all rooms. "the Bedroom Door camera" reads
+            # correctly whatever the household called it.
+            reasons.append(
+                "The %s camera normally sees her by around %s, on %d%% of days, and has not."
+                % (roster.name(anchor.device_id), anchor.clock(), share))
     spare = len(missed) - MAX_ANCHOR_REASONS
     if spare == 1:
         reasons.append("One other thing she usually does by now has not happened either.")

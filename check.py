@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ SUITES = (
 )
 
 SCRIPTS = (ROOT / "stillwatch" / "stillwatch" / "web" / "app.js",)
+PAGE = ROOT / "stillwatch" / "stillwatch" / "web" / "index.html"
 
 
 def check_scripts():
@@ -36,6 +38,24 @@ def check_scripts():
     return 1 if failed else 0
 
 
+def check_element_ids():
+    """Every id the browser script reaches for must exist in the page.
+
+    A missing one is not a syntax error, so node --check passes and the whole
+    page renders blank. It has happened twice.
+    """
+    script = SCRIPTS[0].read_text(encoding="utf-8")
+    page = PAGE.read_text(encoding="utf-8")
+    wanted = sorted(set(re.findall(r'\$\("([^"]+)"\)', script)))
+    present = set(re.findall(r'id="([^"]+)"', page))
+    missing = [name for name in wanted if name not in present]
+    for name in missing:
+        print("  FAIL  app.js reaches for #%s, which the page does not have" % name)
+    if not missing:
+        print("  pass  all %d element ids exist in the page" % len(wanted))
+    return 1 if missing else 0
+
+
 def main():
     results = []
     for name, folder, script in SUITES:
@@ -45,6 +65,9 @@ def main():
 
     print("\n=== browser script ===")
     results.append(("script", check_scripts()))
+
+    print("\n=== page wiring ===")
+    results.append(("wiring", check_element_ids()))
 
     print("\n%s" % ("-" * 40))
     failed = [name for name, code in results if code != 0]

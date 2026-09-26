@@ -8,6 +8,7 @@
   "use strict";
 
   var DAY = 1440;
+  var ANCHOR_LIMIT = 6;
   var THEME_KEY = "stillwatch.theme";
 
   var WORDS = {
@@ -43,7 +44,7 @@
     hero: $("hero"), stateWord: $("stateWord"), heroClock: $("heroClock"),
     statement: $("statement"), reasons: $("reasons"),
     meterLabel: $("meterLabel"), meterValue: $("meterValue"),
-    fill: $("fill"), track: $("track"), meterFoot: $("meterFoot"),
+    fill: $("fill"), track: $("track"), meterFoot: $("meterFoot"), glance: $("glance"),
     messages: $("messages"), messageCount: $("messageCount"),
     play: $("play"), playIcon: $("playIcon"), playLabel: $("playLabel"),
     speed: $("speed"), clock: $("clock"),
@@ -512,14 +513,13 @@
     var days = (day.baseline || {}).days_observed || {};
     Object.keys(days).forEach(function (key) { observed += days[key]; });
 
-    var parts = [];
-    parts.push(day.live
+    var clause = [day.weekday + " " + day.day];
+    if (observed) { clause.push("judged against " + observed + " days of her own history"); }
+    ui.footnote.textContent = (day.live
       ? "Live from the cameras themselves"
-      : "Replaying " + String(day.scenario.title || day.scenario.key).toLowerCase());
-    parts.push(day.weekday + " " + day.day);
-    if (observed) { parts.push("judged against " + observed + " days of her own history"); }
-    parts.push("times are the household's own clock");
-    ui.footnote.textContent = parts.join(". ") + ".";
+      : "Replaying " + String(day.scenario.title || day.scenario.key).toLowerCase())
+      + ", " + clause.join(", ")
+      + ". Times are the household's own clock.";
 
     var excluded = (day.baseline || {}).excluded_absences;
     ui.learnedFrom.textContent = observed
@@ -604,6 +604,22 @@
       foot.push("Held back because the " + reading.last_device_name + " camera cannot see.");
     }
     ui.meterFoot.textContent = foot.join(" ");
+
+    var down = (reading.devices_down || []).length;
+    var total = (day.devices || []).length;
+    var rows = [
+      ["Last movement", reading.silence_began ? clockOf(reading.began_minute) : "none today"],
+      ["Where", reading.last_device_name || "nowhere yet"],
+      ["Cameras", down ? (total - down) + " of " + total + " watching" : total + " watching"]
+    ];
+
+    ui.glance.textContent = "";
+    rows.forEach(function (row) {
+      var item = el("div", "glance-row");
+      item.appendChild(el("dt", null, row[0]));
+      item.appendChild(el("dd", null, row[1]));
+      ui.glance.appendChild(item);
+    });
   }
 
   function paintAnchors(reading) {
@@ -619,13 +635,19 @@
       return;
     }
 
-    anchors.forEach(function (anchor) {
+    var isMissed = function (a) { return Boolean(missed[a.device_id + "|" + a.window]); };
+    var ordered = anchors.filter(isMissed).concat(anchors.filter(function (a) {
+      return !isMissed(a);
+    }));
+    var shown = ordered.slice(0, ANCHOR_LIMIT);
+
+    shown.forEach(function (anchor) {
       var row = el("li");
-      row.dataset.missed = missed[anchor.device_id + "|" + anchor.window] ? "1" : "0";
+      row.dataset.missed = isMissed(anchor) ? "1" : "0";
       row.appendChild(el("span", "anchor-time", anchor.usual));
 
       var what = el("span", "anchor-what");
-      what.appendChild(document.createTextNode(anchor.sentence.replace(/,\s*on .*$/, "")));
+      what.appendChild(document.createTextNode(anchor.where || anchor.sentence));
       if (row.dataset.missed === "1") {
         what.appendChild(el("span", "anchor-flag", "not seen yet"));
       }
@@ -635,6 +657,12 @@
 
       ui.anchors.appendChild(row);
     });
+
+    var rest = ordered.length - shown.length;
+    if (rest > 0) {
+      ui.anchors.appendChild(el("li", "anchor-rest",
+        rest + (rest === 1 ? " more habit" : " more habits") + " learned, not shown"));
+    }
   }
 
   function paintDevices(reading) {
