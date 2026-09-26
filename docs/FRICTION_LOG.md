@@ -11,6 +11,20 @@ Severity is judged by what it cost a solo developer with a month:
 **blocking** stopped work entirely, **high** cost a day or more or forced an
 architectural decision, **medium** cost hours, **low** was an annoyance.
 
+## The three that would change the most
+
+1. **Give a device a type.** Nothing in `/v1/devices` or its capabilities says
+   whether a device is a doorbell or a camera, and telling those apart is the
+   entire basis of this product. Entry 8.
+2. **Let the sandbox fire an event at a webhook.** The Playground can start a
+   video session but cannot deliver the motion event an integration is built
+   around. Entry 10.
+3. **Let credentials be rotated.** They are shown once, cannot be recovered,
+   and the documented remedy for a leaked secret is to delete the app. Entry 9.
+
+Of eleven entries: one blocking, five high, three medium, two low. Every one
+of them was written the day it happened.
+
 ---
 
 ## 1. Identity verification gates the whole platform, and says nothing when it fails
@@ -202,3 +216,148 @@ genuine doubt about whether to attempt the track at all.
 can be done with no hardware. For developers in countries where Ring devices
 are not sold, that one sentence is the difference between building on the
 platform and walking away from it.
+
+---
+
+## 8. Nothing in the API says what kind of device a device is
+
+**Task.** Tell a doorbell from an indoor camera, so the product can work out
+whether somebody left the house or stopped moving inside it. This distinction
+is the whole product.
+
+**Expected.** A type, family, model or category field on the device.
+
+**What happened.** `GET /v1/devices` returns, for the sandbox device, exactly
+two attributes:
+
+```json
+"attributes": {
+  "name": "Playground Device",
+  "image_url": ".../square_device_images/DoorbellPro/rvdp_3x.png"
+}
+```
+
+Following the `capabilities` relationship gives `video`, `motion_detection`,
+`image_enhancements` and `audio`, plus nulls for `glass_break_detection`,
+`battery_status`, `flood_detection`, `tamper_detection`, `contact_detection`,
+`co_detection_listener`, `freeze_detection` and `smoke_detection`.
+
+There is no doorbell capability. There is no button, chime or press capability.
+The device is a Doorbell Pro, and **the only evidence of that anywhere in the
+response is the word `DoorbellPro` inside an image filename.**
+
+**Severity.** High. It forced a design decision on the central mechanism of the
+product.
+
+**Workaround.** Two things, neither of which we wanted to do.
+
+First, classify on the device's *name*, looking for words like door, porch,
+gate and driveway, and default to treating a camera as indoor when the name
+says nothing. Indoor is the safe default: mistaking a door for a room costs an
+explanation, whereas mistaking a room for a door would let a real silence be
+explained away as somebody going out.
+
+Second, correct that classification from behaviour: a device that ever
+registers a doorbell press is promoted to a way in or out, and never demoted.
+Somebody ringing a bell is better evidence than what the camera was named.
+
+We did not parse the image filename. Deciding whether an elderly person has
+left their home on a substring of a PNG path is not defensible.
+
+**What would have helped.** A `type` or `family` attribute on the device, or a
+doorbell entry in capabilities. A household that has renamed its cameras to
+"Camera 1" and "Camera 2" is currently unclassifiable, and those are exactly
+the households least likely to have configured anything carefully.
+
+---
+
+## 9. App credentials are shown once and cannot be recovered
+
+**Task.** Fetch the client ID, client secret and HMAC signature key needed for
+OAuth and webhook verification.
+
+**Expected.** Credentials visible in the console, with the secret regenerable.
+
+**What happened.** All three appear once, on the screen shown immediately after
+the app is created, behind a checkbox confirming they have been saved. After
+that screen they are gone. The documentation is explicit:
+
+> These credentials are only shown once and cannot be retrieved later.
+
+The stated remedy is to delete the app and create a new one, which is possible
+only for an app not yet submitted for certification.
+
+**Severity.** High. Not because of what it cost us in the end, but because of
+how close it came. The credentials were not obviously saved anywhere, the
+console offers no way to check whether they exist, and there is no partial
+view, not even the client ID, to confirm you are looking at the right app. We
+had searched the machine and were about to delete the app and start again when
+the downloaded CSV turned up. Had it not, account linking would have had to be
+configured from scratch.
+
+**Workaround.** Download the CSV on the credentials screen before touching
+anything else, and store it outside the repository.
+
+**What would have helped.** Let the client ID stay visible; it is an identifier,
+not a secret. Allow the secret and the signing key to be rotated in place, which
+is standard practice and is also what a partner needs when a key is
+accidentally exposed. Deleting a production app to recover from a leaked secret
+is not a workable answer.
+
+---
+
+## 10. The Playground exercises live view, not the events an integration listens for
+
+**Task.** Verify our client against the real API without owning hardware.
+
+**What happened.** The Developers Playground is genuinely useful and we used
+it. It issues a short-lived OAuth token, and its API explorer let us confirm
+that our own client authenticates against `api.amazonvision.com`, calls
+`/v1/devices`, and parses Ring's real JSON:API envelope. That is a real
+verification we could not otherwise have done.
+
+What it does not do is deliver events. Its simulation is of a live view
+session, with the WHEP and SDP exchange for a video stream. We found no way to
+make the sandbox deliver a motion or doorbell webhook to our endpoint, which is
+the only part of the API this product actually consumes.
+
+Its history endpoint also returned zero events for the sandbox device, so the
+shape of a populated history page remains untested against anything but our own
+fixtures.
+
+**Severity.** Medium. It left the most important integration path verified only
+against code we wrote ourselves.
+
+**Workaround.** A signed event feeder of our own, posting to our real webhook
+with the real HMAC key, so that everything downstream of the endpoint runs the
+production path.
+
+**What would have helped.** A button in the Playground that fires a motion
+event at a registered webhook URL. For an events-driven integration that single
+feature would be worth more than the whole live view simulator.
+
+---
+
+## 11. The staging path assumes every developer owns hardware
+
+**Task.** Receive real events during development.
+
+**What happened.** Account linking offers up to ten staging users, each of whom
+authorises a real Ring account. A real account with no devices produces no
+devices and no events, so the staging path is only open to a developer who owns
+Ring hardware, or knows somebody who does and is willing to link their home.
+
+Ring devices are not sold in much of the world. A developer in one of those
+countries can register, verify their identity, create an app, read the
+documentation and link an account, and still have no way to see a single event.
+
+**Severity.** High, and structural rather than a bug.
+
+**Workaround.** Our own simulator, published as a separate open source project,
+feeding the real signed webhook.
+
+**What would have helped.** One synthetic household on the sandbox account,
+with a handful of devices that emit motion and doorbell events on a schedule.
+It would cost Ring very little and it would open the platform to every
+developer who cannot buy the hardware. The hackathon rules say a physical
+device is not required; the staging path does not yet reflect that.
