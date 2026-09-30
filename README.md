@@ -106,13 +106,14 @@ Built for **Build, Ship, Shape: Amazon Developer Hackathon**.
 | | |
 |---|---|
 | Track | Ring |
-| Mini challenge | AWS Builder, through Amazon SNS for caregiver notifications |
+| Mini challenge | AWS Builder, through Amazon Bedrock for the wording of an alert and Amazon SNS for delivering it |
 | Mini challenge | Open Source, through [ring-event-simulator](ring-event-simulator/) |
-| Developer feedback | [docs/FRICTION_LOG.md](docs/FRICTION_LOG.md) |
+| Developer feedback | [docs/PRODUCT_FEEDBACK.md](docs/PRODUCT_FEEDBACK.md), [docs/FRICTION_LOG.md](docs/FRICTION_LOG.md) |
 | How it was built, and why | [docs/DESIGN.md](docs/DESIGN.md), [docs/DECISIONS.md](docs/DECISIONS.md) |
 
-The friction log records the Ring developer experience as it happened, with
-severity and suggested fixes for each problem encountered.
+The friction log records the Ring developer experience as it happened, with a
+severity and a suggested fix for each problem encountered. The product feedback
+is the considered view of every Amazon tool used, including what worked.
 
 ## Licence
 
