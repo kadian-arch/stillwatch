@@ -18,6 +18,7 @@ from markupsafe import escape
 
 from .clock import (
     clock,
+    local_hour,
     household_tz,
     local_date,
     midnight_before,
@@ -206,7 +207,7 @@ def _day_outages(events, midnight):
     return spans
 
 
-def build_day(source, key, on=None):
+def build_day(source, key, on=None, confirmed=(), answers=()):
     """Everything the dashboard needs for one day, computed once.
 
     `on` asks for a particular date. A caregiver wants to know what yesterday
@@ -230,7 +231,7 @@ def build_day(source, key, on=None):
     midnight = midnight_on(day)
     daytype = daytype_of(midnight)
 
-    baseline = learn(events, roster, until=midnight)
+    baseline = learn(events, roster, until=midnight, confirmed=confirmed)
     # A replay walks the whole day. Live stops at the present, because the rest
     # of today has not happened yet.
     last = midnight + timedelta(minutes=DAY_MINUTES - STEP_MINUTES)
@@ -268,6 +269,7 @@ def build_day(source, key, on=None):
         "as_of": (now if today else midnight + timedelta(minutes=DAY_MINUTES)).isoformat(),
         # Not "today": that key already carries this day's activity per camera.
         "is_today": today,
+        "answers": {row["episode"]: row for row in answers},
         "day": day.isoformat(),
         "weekday": midnight.strftime("%A"),
         "timezone": str(household_tz()),
@@ -336,12 +338,15 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
     def bundle(key, on=None):
         # Today keeps happening, so it is never cached. A day that has finished
         # cannot change, so it is worked out once.
+        confirmed = tuple(store.confirmed_quiet()) if store is not None else ()
+        said = tuple(store.answers()) if store is not None else ()
         if live and key == "live" and (on is None or on == local_date(datetime.now(timezone.utc))):
-            return build_day(source, key)
+            return build_day(source, key, confirmed=confirmed, answers=said)
         token = (key, on.isoformat() if on else None)
         with lock:
             if token not in cache:
-                cache[token] = build_day(source, key, on)
+                cache[token] = build_day(source, key, on, confirmed=confirmed,
+                                         answers=said)
             return cache[token]
 
     @app.errorhandler(404)
@@ -436,6 +441,10 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
             app.logger.warning("rejected a webhook with a bad signature")
             return jsonify({"error": "bad signature"}), 401
 
+        # Recorded before the payload is even read. A delivery we could not
+        # understand still proves the connection is alive.
+        store.note_delivery(datetime.now(timezone.utc))
+
         try:
             payload = json.loads(body.decode("utf-8") or "{}")
             events = normalise_many(payload)
@@ -451,6 +460,60 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
     @app.get("/api/scenarios")
     def scenarios():
         return jsonify({"persona": source.persona(), "scenarios": source.scenarios()})
+
+    OUTCOMES = {
+        "fine": "Checked, and all is well",
+        "away": "She was out, not still",
+        "expected": "This is normal for her now",
+        "helped": "Something was wrong and has been dealt with",
+    }
+
+    @app.get("/api/answers")
+    def answers():
+        if store is None:
+            return jsonify({"answers": [], "outcomes": OUTCOMES})
+        return jsonify({"answers": store.answers(), "outcomes": OUTCOMES})
+
+    @app.post("/api/answer")
+    def answer():
+        """A caregiver saying what they found. This is what ends an episode.
+
+        Until somebody answers, the only thing that stops Stillwatch worrying
+        is movement, which is no use to a daughter who has already phoned and
+        found her mother perfectly well.
+        """
+        if store is None:
+            abort(503, description="no event store configured")
+
+        body = request.get_json(silent=True) or {}
+        episode = str(body.get("episode") or "").strip()
+        outcome = str(body.get("outcome") or "").strip()
+        note = (body.get("note") or "").strip()[:500] or None
+
+        if not episode:
+            abort(400, description="which stretch of quiet is this about?")
+        if outcome not in OUTCOMES:
+            abort(400, description="outcome must be one of %s" % ", ".join(sorted(OUTCOMES)))
+
+        try:
+            began = parse_timestamp(episode)
+        except ValueError:
+            abort(400, description="episode must be an ISO 8601 timestamp")
+
+        now = datetime.now(timezone.utc)
+        seconds = None
+        if outcome == "expected":
+            # Only a stretch that has actually finished teaches us anything.
+            latest = store.last_event_at(kinds=("motion", "ding"))
+            seconds = max(0.0, ((latest or now) - began).total_seconds())
+
+        store.save_answer(
+            episode, outcome, now, note=note,
+            daytype=daytype_of(began), hour=local_hour(began), seconds=seconds,
+        )
+        cache.clear()
+        return jsonify({"episode": episode, "outcome": outcome,
+                        "means": OUTCOMES[outcome]}), 200
 
     @app.get("/api/day")
     def day():
@@ -483,7 +546,10 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
         events = source.events(key)
         roster = source.roster(key)
         midnight = midnight_before(moment)
-        baseline = learn(events, roster, until=midnight)
-        return jsonify(assess(events, baseline, roster, moment).to_dict())
+        told = tuple(store.confirmed_quiet()) if store is not None else ()
+        baseline = learn(events, roster, until=midnight, confirmed=told)
+        contact = store.last_delivery_at() if store is not None else None
+        return jsonify(assess(events, baseline, roster, moment,
+                              last_contact=contact).to_dict())
 
     return app

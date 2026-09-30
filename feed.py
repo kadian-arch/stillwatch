@@ -204,7 +204,10 @@ def main():
         # because anything already there is refused on its id.
         from stillwatch.store import EventStore
 
-        last = EventStore(args.db).last_event_at()
+        # Movement only. A heartbeat is written at the current moment, so
+        # using the newest event of any kind would move the watermark to now
+        # and nothing would ever be generated again.
+        last = EventStore(args.db).last_event_at(kinds=("motion", "ding"))
         now = datetime.now(timezone.utc)
         if last is None:
             first = now.date() - timedelta(days=args.seed_days)

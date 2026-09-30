@@ -404,8 +404,14 @@ def _learn_anchors(events, roster, days, spans):
     return anchors
 
 
-def learn(events, roster, until=None, departure_window=None):
-    """Build a baseline from history. Events at or after until are ignored."""
+def learn(events, roster, until=None, departure_window=None, confirmed=()):
+    """Build a baseline from history. Events at or after until are ignored.
+
+    `confirmed` holds stretches the household has told us are normal, as
+    (daytype, hour, seconds). They join the learned samples, so somebody who
+    has changed when they sleep stops being asked about by the second week
+    rather than waiting for ten more to average out.
+    """
     if departure_window is None:
         departure_window = (DEPARTURE_LOOKBACK, DEPARTURE_LOOKAHEAD)
     if until is not None:
@@ -417,6 +423,9 @@ def learn(events, roster, until=None, departure_window=None):
     spans = outage_spans(events)
     days = _full_days(events, until)
     home_gaps, away_gaps, excluded = _collect_gaps(events, roster, spans, departure_window)
+
+    for daytype, hour, seconds in confirmed:
+        home_gaps.setdefault(Baseline._quiet_key(daytype, hour), []).append(float(seconds))
 
     counts = {daytype: 0 for daytype in DAYTYPES}
     for day in days:

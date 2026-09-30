@@ -9,6 +9,23 @@
 
   var DAY = 1440;
   var ANCHOR_LIMIT = 6;
+
+  // What a caregiver can say when they have looked. Until one of these is
+  // chosen, the only thing that ends an episode is movement, which is no help
+  // to somebody who has already phoned and found everyone well.
+  var ANSWERS = [
+    ["fine", "All is well"],
+    ["away", "She was out"],
+    ["expected", "This is normal now"],
+    ["helped", "Dealt with"]
+  ];
+
+  var SAID = {
+    fine: "You said all was well.",
+    away: "You said she was out, not still.",
+    expected: "You said this is normal for her now. It has been added to what Stillwatch expects.",
+    helped: "You said it was dealt with."
+  };
   var THEME_KEY = "stillwatch.theme";
 
   var WORDS = {
@@ -44,6 +61,8 @@
     standby: $("standby"), facts: $("facts"), seeDemo: $("seeDemo"), banner: $("banner"),
     hero: $("hero"), stateWord: $("stateWord"), heroClock: $("heroClock"),
     statement: $("statement"), reasons: $("reasons"),
+    answer: $("answer"), answerAsk: $("answerAsk"),
+    answerButtons: $("answerButtons"),
     meterLabel: $("meterLabel"), meterValue: $("meterValue"),
     fill: $("fill"), track: $("track"), meterFoot: $("meterFoot"), glance: $("glance"),
     messages: $("messages"), messageCount: $("messageCount"),
@@ -601,6 +620,7 @@
       ui.reasons.appendChild(el("li", null, sentenceCase(why)));
     });
 
+    paintAnswer(reading);
     paintMeter(reading);
     paintAnchors(reading);
     paintDevices(reading);
@@ -610,6 +630,58 @@
       : Math.floor(reading.began_minute / 60);
     Array.prototype.forEach.call(ui.quietbars.children, function (bar) {
       bar.dataset.now = Number(bar.dataset.hour) === began ? "1" : "0";
+    });
+  }
+
+  function paintAnswer(reading) {
+    var episode = reading.silence_began;
+    var worrying = reading.state === "CONCERN" || reading.state === "ALERT";
+    if (!episode || !worrying || !day.is_today) {
+      ui.answer.hidden = true;
+      return;
+    }
+
+    ui.answer.hidden = false;
+    var said = (day.answers || {})[episode];
+    ui.answerButtons.textContent = "";
+
+    if (said) {
+      ui.answerAsk.textContent = SAID[said.outcome] || "You have answered this.";
+      return;
+    }
+
+    ui.answerAsk.textContent = "Have you been able to check on " + (day.persona || "her") + "?";
+    ANSWERS.forEach(function (pair) {
+      var button = el("button", "answer-button", pair[1]);
+      button.type = "button";
+      button.addEventListener("click", function () { answerWith(episode, pair[0], button); });
+      ui.answerButtons.appendChild(button);
+    });
+  }
+
+  function answerWith(episode, outcome, button) {
+    Array.prototype.forEach.call(ui.answerButtons.children, function (other) {
+      other.disabled = true;
+    });
+    button.textContent = "Saving";
+
+    fetch("/api/answer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ episode: episode, outcome: outcome })
+    }).then(function (reply) {
+      if (!reply.ok) { throw new Error("refused"); }
+      return reply.json();
+    }).then(function () {
+      day.answers = day.answers || {};
+      day.answers[episode] = { episode: episode, outcome: outcome };
+      ui.answerAsk.textContent = SAID[outcome] || "Thank you.";
+      ui.answerButtons.textContent = "";
+    }).catch(function () {
+      button.textContent = "Could not save, try again";
+      Array.prototype.forEach.call(ui.answerButtons.children, function (other) {
+        other.disabled = false;
+      });
     });
   }
 

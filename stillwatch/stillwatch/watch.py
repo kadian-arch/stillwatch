@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 from .clock import local_date, midnight_before
 from .monitor import assess
-from .notify import Notifier
+from .notify import Notifier, restore, state_of
 from .rhythm import learn
 
 TICK_MINUTES = 5
@@ -35,7 +35,10 @@ class LiveWatcher:
     def __init__(self, store, person, channels, narrator=None, link=None,
                  tick_minutes=TICK_MINUTES, relearn_minutes=RELEARN_MINUTES):
         self.store = store
-        self.notifier = Notifier(person, channels, link=link, narrator=narrator)
+        self.notifier = restore(
+            Notifier(person, channels, link=link, narrator=narrator,
+                     answered=store.answer_for),
+            store.load_state("notifier"))
         self.tick = timedelta(minutes=tick_minutes)
         self.relearn = timedelta(minutes=relearn_minutes)
         self._baseline = None
@@ -57,7 +60,8 @@ class LiveWatcher:
         events = self.store.events()
         self._roster = self.store.roster()
         midnight = midnight_before(now)
-        self._baseline = learn(events, self._roster, until=midnight)
+        self._baseline = learn(events, self._roster, until=midnight,
+                               confirmed=self.store.confirmed_quiet())
         self._learned_at = now
         log.info("relearned the rhythm from %d events", len(events))
 
@@ -70,8 +74,12 @@ class LiveWatcher:
 
         # Events are read fresh every tick. The baseline is not, because it
         # describes weeks and cannot have moved since the last one.
-        reading = assess(self.store.events(), self._baseline, self._roster, now)
+        reading = assess(self.store.events(), self._baseline, self._roster, now,
+                         last_contact=self.store.last_delivery_at())
         notices = self.notifier.observe(reading)
+        # Written every time, not only when something was sent, so a restart
+        # picks up exactly where this left off.
+        self.store.save_state("notifier", state_of(self.notifier))
         for notice in notices:
             if notice.delivered:
                 log.info("sent %s to %s", notice.kind, ", ".join(notice.delivered_to))

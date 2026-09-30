@@ -36,8 +36,15 @@ LOW = "low"
 URGENT = "urgent"
 INFO = "info"
 
-REPEAT_MINUTES = 60
 SUBJECT_LIMIT = 100
+
+# How long after the last message before reminding again, in minutes, and then
+# no more. An unanswered alarm that repeats hourly for two days is not urgency,
+# it is noise, and the sixth identical message is read less carefully than the
+# first. Stillwatch says it once, chases it a few times over the first day, and
+# then stops repeating itself while it keeps watching.
+REMINDER_GAPS = (60, 120, 240, 480, 720)
+REPEAT_MINUTES = REMINDER_GAPS[0]
 
 # A low urgency message can wait a quarter of an hour to be sure the concern
 # is holding. Sitting still a little too long after lunch should not reach a
@@ -95,7 +102,7 @@ def _body(lead, reading, link):
     return "\n".join(lines)
 
 
-def compose(kind, person, reading, link=None):
+def compose(kind, person, reading, link=None, last=False):
     """The words a caregiver reads. One place, so it can be rewritten later."""
     since = _clock(reading.silence_began)
     quiet = human_duration(reading.silence_seconds)
@@ -111,6 +118,9 @@ def compose(kind, person, reading, link=None):
     elif kind == REMINDER_NOTICE:
         subject = _subject("still no movement from %s, %s now" % (person, quiet))
         lead = "Still no movement. " + reading.headline
+        if last:
+            lead += (" Stillwatch will not keep repeating this. It is still watching, and"
+                     " will write again as soon as %s moves." % person)
         urgency = URGENT
     elif kind == ALL_CLEAR_NOTICE:
         subject = _subject("all clear, %s is moving again" % person)
@@ -126,9 +136,13 @@ def compose(kind, person, reading, link=None):
 
 class Notifier:
     def __init__(self, person, channels, repeat_minutes=REPEAT_MINUTES, link=None,
-                 hold_minutes=CONCERN_HOLD_MINUTES, narrator=None):
+                 hold_minutes=CONCERN_HOLD_MINUTES, narrator=None, answered=None):
         self.person = person
         self.narrator = narrator
+        # Asked whether somebody has already looked into this stretch. A
+        # caregiver who has phoned and found everyone well should not be
+        # chased about it again.
+        self.answered = answered or (lambda episode: None)
         self.channels = list(channels)
         self.repeat = timedelta(minutes=repeat_minutes)
         self.hold = timedelta(minutes=hold_minutes)
@@ -139,6 +153,7 @@ class Notifier:
         self.level = None
         self.last_sent = None
         self.blind_told = False
+        self.reminders = 0
         self.sent = []
 
     def _link_for(self, reading):
@@ -146,8 +161,9 @@ class Notifier:
             return self.link(reading)
         return self.link
 
-    def _deliver(self, kind, reading, episode):
-        subject, body, urgency = compose(kind, self.person, reading, self._link_for(reading))
+    def _deliver(self, kind, reading, episode, last=False):
+        subject, body, urgency = compose(kind, self.person, reading,
+                                         self._link_for(reading), last=last)
         written_by_model = False
 
         if self.narrator is not None:
@@ -176,6 +192,11 @@ class Notifier:
         return notice
 
     def _decide(self, reading, episode):
+        if episode is not None and self.level and self.answered(episode):
+            # Somebody has looked. Stay quiet about it, but still say so when
+            # she moves again, because that is the message people wait for.
+            return ALL_CLEAR_NOTICE if episode != self.episode else None
+
         if reading.state == UNKNOWN:
             # Losing sight of the house is worth saying once. Not knowing yet,
             # because there is no history, is not.
@@ -188,9 +209,10 @@ class Notifier:
         if reading.state == ALERT:
             if self.level != ALERT_NOTICE or episode != self.episode:
                 return ALERT_NOTICE
-            if self.last_sent is not None and reading.at - self.last_sent >= self.repeat:
-                return REMINDER_NOTICE
-            return None
+            if self.reminders >= len(REMINDER_GAPS) or self.last_sent is None:
+                return None
+            gap = timedelta(minutes=REMINDER_GAPS[self.reminders])
+            return REMINDER_NOTICE if reading.at - self.last_sent >= gap else None
 
         if reading.state == CONCERN:
             held = self.concern_since is not None and reading.at - self.concern_since >= self.hold
@@ -206,7 +228,12 @@ class Notifier:
             self.episode = None
             self.level = None
             self.last_sent = None
+            self.reminders = 0
             return
+        if episode != self.episode:
+            self.reminders = 0
+        if kind == REMINDER_NOTICE:
+            self.reminders += 1
         self.episode = episode
         self.last_sent = reading.at
         if kind in (ALERT_NOTICE, REMINDER_NOTICE):
@@ -233,7 +260,9 @@ class Notifier:
             kind = self._decide(reading, episode)
             if kind is None:
                 break
-            notice = self._deliver(kind, reading, episode)
+            last = (kind == REMINDER_NOTICE
+                    and self.reminders == len(REMINDER_GAPS) - 1)
+            notice = self._deliver(kind, reading, episode, last=last)
             notices.append(notice)
             if not notice.delivered:
                 break
@@ -242,6 +271,35 @@ class Notifier:
             if kind != ALL_CLEAR_NOTICE:
                 break
         return notices
+
+
+def state_of(notifier):
+    """Everything the notifier would forget if the process stopped."""
+    return {
+        "episode": notifier.episode,
+        "level": notifier.level,
+        "last_sent": notifier.last_sent.isoformat() if notifier.last_sent else None,
+        "reminders": notifier.reminders,
+        "blind_told": notifier.blind_told,
+        "concern_episode": notifier.concern_episode,
+        "concern_since": (notifier.concern_since.isoformat()
+                          if notifier.concern_since else None),
+    }
+
+
+def restore(notifier, saved):
+    """Put it back, so a restart does not tell everybody twice."""
+    if not saved:
+        return notifier
+    moment = lambda value: datetime.fromisoformat(value) if value else None
+    notifier.episode = saved.get("episode")
+    notifier.level = saved.get("level")
+    notifier.last_sent = moment(saved.get("last_sent"))
+    notifier.reminders = int(saved.get("reminders") or 0)
+    notifier.blind_told = bool(saved.get("blind_told"))
+    notifier.concern_episode = saved.get("concern_episode")
+    notifier.concern_since = moment(saved.get("concern_since"))
+    return notifier
 
 
 class MemoryChannel:

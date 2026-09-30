@@ -36,6 +36,19 @@ STATEMENTS = (
         name       TEXT NOT NULL,
         zone_class TEXT NOT NULL
     )""",
+    """CREATE TABLE IF NOT EXISTS answers (
+        episode TEXT PRIMARY KEY,
+        outcome TEXT NOT NULL,
+        note TEXT,
+        daytype TEXT,
+        hour INTEGER,
+        seconds REAL,
+        at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS meta (
+        name TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )""",
     """CREATE TABLE IF NOT EXISTS tokens (
         account    TEXT PRIMARY KEY,
         access     TEXT,
@@ -179,11 +192,111 @@ class EventStore:
         with self._lock:
             return self._fetchall("SELECT COUNT(*) AS total FROM events")[0]["total"]
 
-    def last_event_at(self):
+    def last_event_at(self, kinds=None):
+        """The newest event, or the newest of certain kinds.
+
+        A caller asking "when did anything last happen in this house" wants
+        movement, not a device saying it is still switched on. Anything that
+        tracks activity must say which kinds it means.
+        """
+        sql = "SELECT MAX(at) AS latest FROM events"
+        values = ()
+        if kinds:
+            kinds = tuple(kinds)
+            sql += " WHERE kind IN (%s)" % ", ".join("?" for _ in kinds)
+            values = kinds
         with self._lock:
-            rows = self._fetchall("SELECT MAX(at) AS latest FROM events")
+            rows = self._fetchall(sql, values)
         latest = rows[0]["latest"] if rows else None
         return parse_timestamp(latest) if latest else None
+
+    def save_answer(self, episode, outcome, at, note=None,
+                    daytype=None, hour=None, seconds=None):
+        """What a caregiver said when they looked.
+
+        An episode is a single stretch of worry, keyed by the moment the house
+        went quiet. Answering one ends the chasing for it. Nothing is deleted:
+        the answer stays so the same stretch is never raised twice, and so the
+        household can see what was said and when.
+        """
+        with self._lock:
+            self._execute(
+                "INSERT INTO answers (episode, outcome, note, daytype, hour, seconds, at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT (episode) DO UPDATE SET outcome = excluded.outcome,"
+                " note = excluded.note, at = excluded.at",
+                (episode, outcome, note, daytype, hour, seconds, at.isoformat()),
+            ).close()
+            self._db.commit()
+
+    def answer_for(self, episode):
+        if not episode:
+            return None
+        with self._lock:
+            rows = self._fetchall(
+                "SELECT episode, outcome, note, at FROM answers WHERE episode = ?",
+                (episode,))
+        return rows[0] if rows else None
+
+    def answers(self, limit=50):
+        with self._lock:
+            return self._fetchall(
+                "SELECT episode, outcome, note, at FROM answers ORDER BY at DESC")[:limit]
+
+    def confirmed_quiet(self):
+        """Stretches the household has said are normal for them.
+
+        These become samples in the baseline, so a person who has changed when
+        they sleep stops being woken about by the second week rather than the
+        tenth.
+        """
+        with self._lock:
+            rows = self._fetchall(
+                "SELECT daytype, hour, seconds FROM answers"
+                " WHERE outcome = ? AND daytype IS NOT NULL AND seconds IS NOT NULL",
+                ("expected",))
+        return [(row["daytype"], int(row["hour"]), float(row["seconds"])) for row in rows]
+
+    def save_state(self, name, payload):
+        """Remember something across a restart, as JSON."""
+        with self._lock:
+            self._execute(
+                "INSERT INTO meta (name, value) VALUES (?, ?)"
+                " ON CONFLICT (name) DO UPDATE SET value = excluded.value",
+                (name, json.dumps(payload)),
+            ).close()
+            self._db.commit()
+
+    def load_state(self, name):
+        with self._lock:
+            rows = self._fetchall("SELECT value FROM meta WHERE name = ?", (name,))
+        if not rows:
+            return None
+        try:
+            return json.loads(rows[0]["value"])
+        except ValueError:
+            return None
+
+    def note_delivery(self, at):
+        """Remember that something was delivered to us, whatever it contained.
+
+        Silence in the data and silence on the wire look the same from the
+        events alone. This is the difference: it is written whenever a signed
+        delivery is accepted, even an empty one, so the service can tell
+        "nobody moved" from "nobody is telling us anything".
+        """
+        with self._lock:
+            self._execute(
+                "INSERT INTO meta (name, value) VALUES (?, ?)"
+                " ON CONFLICT (name) DO UPDATE SET value = excluded.value",
+                ("last_delivery_at", at.isoformat()),
+            ).close()
+            self._db.commit()
+
+    def last_delivery_at(self):
+        with self._lock:
+            rows = self._fetchall("SELECT value FROM meta WHERE name = ?", ("last_delivery_at",))
+        return parse_timestamp(rows[0]["value"]) if rows else None
 
     def remember_device(self, device):
         with self._lock:

@@ -31,6 +31,7 @@ from stillwatch.notify import (
     CONCERN_NOTICE,
     INFO,
     LOW,
+    REMINDER_GAPS,
     REMINDER_NOTICE,
     SUBJECT_LIMIT,
     URGENT,
@@ -43,6 +44,8 @@ from stillwatch.notify import (
     SNSChannel,
     channels_from_env,
     compose,
+    restore,
+    state_of,
 )
 from stillwatch.rhythm import Baseline, learn
 
@@ -148,9 +151,20 @@ def test_collapse():
           kinds.count(CONCERN_NOTICE) == 1 and kinds.count(ALERT_NOTICE) == 1, str(kinds))
 
     reminders = [n for n in channel.notices if n.kind == REMINDER_NOTICE]
-    gaps = [(b.at - a.at).total_seconds() / 60 for a, b in zip(channel.notices[1:], channel.notices[2:])]
-    check("reminders keep coming while she does not move", len(reminders) >= 10, str(len(reminders)))
-    check("reminders are an hour apart", all(55 <= gap <= 65 for gap in gaps), str(gaps[:4]))
+    gaps = [round((b.at - a.at).total_seconds() / 60)
+            for a, b in zip(channel.notices[1:], channel.notices[2:])]
+
+    # An alarm that repeats hourly for two days is noise, and the sixth
+    # identical message is read less carefully than the first.
+    check("she is chased, but not endlessly", 0 < len(reminders) <= len(REMINDER_GAPS),
+          str(len(reminders)))
+    check("each reminder waits longer than the last",
+          all(b >= a for a, b in zip(gaps, gaps[1:])), str(gaps))
+    check("the first comes about an hour later", gaps and 55 <= gaps[0] <= 65, str(gaps[:1]))
+    check("a whole day produces a handful of messages, not dozens",
+          len(channel.notices) <= 8, str(len(channel.notices)))
+    check("it has not run out of reminders within one day",
+          "will not keep repeating" not in reminders[-1].body)
     check("urgency matches the kind",
           channel.notices[0].urgency == LOW
           and all(n.urgency == URGENT for n in channel.notices[1:]))
@@ -444,6 +458,95 @@ def test_live_watcher():
           watcher._learned_at is not None)
 
 
+def test_a_silence_that_lasts_for_days():
+    section("an alarm nobody answers")
+
+    # Two days of unbroken alert, which is what a stopped feed or an
+    # unanswered alarm actually looks like. This is the case that sent 80
+    # emails before reminders were capped.
+    channel = MemoryChannel()
+    notifier = Notifier("Margarette", [channel])
+    began = 0
+    for step in range(0, 48 * 60, 5):
+        notifier.observe(reading(ALERT, 60 + step, began))
+
+    kinds = [n.kind for n in channel.notices]
+    reminders = [n for n in channel.notices if n.kind == REMINDER_NOTICE]
+
+    check("the alert itself is sent once", kinds.count(ALERT_NOTICE) == 1, str(kinds))
+    check("reminders stop at the cap", len(reminders) == len(REMINDER_GAPS),
+          str(len(reminders)))
+    check("two days produce six messages, not eighty",
+          len(channel.notices) == len(REMINDER_GAPS) + 1, str(len(channel.notices)))
+    check("the last one says it will stop, without sounding curt",
+          "will not keep repeating" in reminders[-1].body
+          and "still watching" in reminders[-1].body, reminders[-1].body[:110])
+
+    spread = (channel.notices[-1].at - channel.notices[0].at).total_seconds() / 3600
+    # The gaps add up to 27 hours, so the last nudge lands just over a day in
+    # and the second day is silent unless something changes.
+    check("they are spread across roughly the first day",
+          26 <= spread <= 28, "%.1f hours" % spread)
+
+
+def test_answering_ends_the_chasing():
+    section("somebody looks, and the chasing stops")
+
+    said = {}
+    channel = MemoryChannel()
+    notifier = Notifier("Margarette", [channel], answered=said.get)
+
+    began = 0
+    for step in range(0, 6 * 60, 5):
+        notifier.observe(reading(ALERT, 60 + step, began))
+    before = len(channel.notices)
+    check("without an answer she is chased", before >= 3, str(before))
+
+    # The daughter phones, finds her well, and says so.
+    episode = reading(ALERT, 60, began).silence_began.isoformat()
+    said[episode] = {"episode": episode, "outcome": "fine"}
+
+    for step in range(6 * 60, 48 * 60, 5):
+        notifier.observe(reading(ALERT, 60 + step, began))
+    check("after an answer nothing more is sent", len(channel.notices) == before,
+          str(len(channel.notices)))
+
+    # She gets up the next morning. That is still worth saying.
+    notifier.observe(reading(NORMAL, 48 * 60 + 65, 48 * 60 + 60))
+    kinds = [n.kind for n in channel.notices]
+    check("but moving again is still announced", kinds[-1] == ALL_CLEAR_NOTICE, str(kinds[-1]))
+
+
+def test_it_remembers_across_a_restart():
+    section("a restart does not tell everybody twice")
+
+    channel = MemoryChannel()
+    notifier = Notifier("Margarette", [channel])
+    began = 0
+    for step in range(0, 3 * 60, 5):
+        notifier.observe(reading(ALERT, 60 + step, began))
+    before = len(channel.notices)
+    check("messages went out", before >= 2, str(before))
+
+    # The dyno restarts. Everything the notifier knew was in memory.
+    saved = state_of(notifier)
+    fresh = restore(Notifier("Margarette", [channel]), saved)
+
+    check("it comes back knowing which stretch it was worrying about",
+          fresh.episode == notifier.episode)
+    check("and how many reminders it had already sent",
+          fresh.reminders == notifier.reminders,
+          "%d vs %d" % (fresh.reminders, notifier.reminders))
+
+    for step in range(3 * 60, 4 * 60, 5):
+        fresh.observe(reading(ALERT, 60 + step, began))
+    after = [n.kind for n in channel.notices[before:]]
+    check("the alert itself is never raised a second time",
+          ALERT_NOTICE not in after, str(after))
+    check("the reminder schedule simply carries on",
+          set(after) <= {REMINDER_NOTICE}, str(after))
+
+
 def main():
     for test in (
         test_collapse,
@@ -458,6 +561,9 @@ def main():
         test_email_channel,
         test_email_from_environment,
         test_live_watcher,
+        test_a_silence_that_lasts_for_days,
+        test_answering_ends_the_chasing,
+        test_it_remembers_across_a_restart,
     ):
         test()
 

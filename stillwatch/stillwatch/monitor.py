@@ -246,16 +246,26 @@ def _ladder_state(ratio, missed):
     return state
 
 
-def assess(events, baseline, roster, now):
-    """Judge the household as at a single moment."""
+def assess(events, baseline, roster, now, last_contact=None):
+    """Judge the household as at a single moment.
+
+    `last_contact` is when anything was last delivered to us, whatever it
+    contained. It is separate from the events because an empty delivery still
+    proves the connection is alive, and a house with nobody moving in it
+    produces no events at all.
+    """
     events = [event for event in events if event.at <= now]
     spans = outage_spans(events)
     interior_ids = roster.interior_ids()
     down = _down_now(spans, interior_ids, now)
 
-    heartbeats = [event.at for event in events if event.kind == ONLINE]
-    if heartbeats and (now - max(heartbeats)).total_seconds() > CONTACT_GAP_SECONDS:
-        quiet_for = human_duration((now - max(heartbeats)).total_seconds())
+    # Either signal counts, and the later one wins: a device saying it is alive,
+    # or the service having been spoken to at all.
+    contacts = [event.at for event in events if event.kind == ONLINE]
+    if last_contact is not None and last_contact <= now:
+        contacts.append(last_contact)
+    if contacts and (now - max(contacts)).total_seconds() > CONTACT_GAP_SECONDS:
+        quiet_for = human_duration((now - max(contacts)).total_seconds())
         return _unknown(
             now,
             NO_CONTACT,

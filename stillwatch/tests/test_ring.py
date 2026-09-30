@@ -182,8 +182,10 @@ def test_both_databases():
     store.save_tokens("default", "access", "refresh", moment(9))
     sent = dialect.connection.statements
 
-    schema = " ".join(sent[:4])
-    for table in ("events", "devices", "tokens"):
+    # Every statement, not the first few: a new table should not push an
+    # existing one out of the window and quietly stop checking it.
+    schema = " ".join(sent)
+    for table in ("events", "devices", "meta", "tokens"):
         check("the %s table is created" % table, "CREATE TABLE IF NOT EXISTS %s" % table in schema)
 
     inserts = [line for line in sent if line.startswith("INSERT INTO events")]

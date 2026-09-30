@@ -568,6 +568,36 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
   opacity: 0.5;
 }
 
+.answer {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-2);
+}
+.answer-ask {
+  color: var(--ink-2);
+  font-size: 13.8px;
+  margin-bottom: 12px;
+}
+.answer-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.answer-button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.12s var(--ease), background 0.2s;
+}
+.answer-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--state) 55%, transparent);
+  background: color-mix(in srgb, var(--state) 8%, var(--surface-2));
+}
+.answer-button:active:not(:disabled) { transform: scale(0.97); }
+.answer-button:disabled { opacity: 0.5; cursor: default; }
+
 /* ---------- the meter ---------- */
 
 .hero-meter { padding-top: 4px; }
