@@ -106,18 +106,37 @@ The dashboard shows when a person is at home, when they sleep and when the
 house is empty, and its answer buttons let whoever presses one silence a real
 alarm. It should not be open to the internet.
 
-Set two things and it is not:
+There are two arrangements. Both need a signing key:
 
 ```
-STILLWATCH_PASSCODE          something long that the family can read down a phone
 STILLWATCH_SESSION_SECRET    a long random string, used to sign session cookies
 ```
 
-With a passcode set, the household and every answer need a sign in. Anybody
-holding the passcode signs in with their own name, and that name is stored
-with anything they answer and sent to everybody else, so the family can see
-who has already been round. Sessions last a fortnight and are a signed cookie,
-so a restart does not sign anyone out and there is no session table to leak.
+**A code each**, which is the one to use. One setting lists who may sign in and
+what each of them types:
+
+```
+STILLWATCH_MEMBERS   Lucie:7F3K2Q-xxxx, KAD:9ZP4MX-xxxx, Nurse:4QW8TB-xxxx
+```
+
+Each person signs in with their own name and their own code. Nobody can sign
+in under a name that is not on the list, and the name recorded against an
+answer is always the household's spelling of it, never what was typed. Taking
+somebody off the list is deleting their entry.
+
+**One shared code**, simpler and weaker:
+
+```
+STILLWATCH_PASSCODE          something long the family can read down a phone
+```
+
+Anybody holding it signs in with a name they choose. That tells you a
+household answered, not which person did.
+
+Either way, sessions last a fortnight and are a signed cookie, so a restart
+signs nobody out and there is no session table to leak. The name is stored
+with anything that person answers and sent to everybody else, so the family
+can see who has already been round.
 
 Leave the passcode out and the service runs open. It will say so in a panel at
 the top of its own page, which is the point: a lock nobody knows about is
@@ -154,24 +173,74 @@ simulated household has done since the last event stored, posts it through the
 real signed webhook, and stops. Safe to run as often as you like: every event
 carries an id derived from itself, so anything already stored is refused.
 
-## Amazon services
+It also posts the reports the cameras would have made through the stretch it
+is filling, every half hour. Motion on its own does not repair a gap: a day
+with movement in it but no sign of the cameras checking in still reads as a
+day nothing reported, because that is exactly what it looked like at the time.
 
-Both are optional, and both are read from the environment.
+To repair a stretch that was missed entirely, name where to start:
+
+```bash
+python feed.py --catch-up --since 2026-09-26
+```
+
+Nothing can be doubled up by this. Everything in that stretch is posted again
+and everything already stored is refused on its id.
+
+## The recorded days
 
 ```
+STILLWATCH_DEMO_DATA   a folder for them, for example demo-data
+```
+
+Six days of a simulated household, each ending somewhere worth looking at.
+They are built on first start if the folder is empty, because a container
+begins with an empty disk every time it restarts and a few megabytes of events
+that rebuild in a second do not belong in the repository.
+
+They are readable without signing in, in every configuration, and are labelled
+as demonstrations wherever they appear. Without this set, somebody who cannot
+sign in sees a sign in panel and nothing else.
+
+## Amazon services
+
+Both are optional, both are read from the environment, and both need an AWS
+access key with nothing on it but the one permission it uses.
+
+```
+AWS_ACCESS_KEY_ID            a key for a user that can do these two things only
+AWS_SECRET_ACCESS_KEY
+AWS_REGION                   the region the topic and the model live in
 STILLWATCH_SNS_TOPIC_ARN     notifications through Amazon SNS
-AWS_REGION                   the region that topic and model live in
 STILLWATCH_BEDROCK_MODEL_ID  have the opening sentence of a message written
 ```
 
-SNS is the better notification channel because a caregiver subscribes
-themselves to the topic, so Stillwatch never holds anybody's address or phone
-number. SMTP is the fallback, and it does hold them.
+### SNS, for the messages
 
-Bedrock rewrites the first sentence of a message and nothing else. Every
-reason underneath it is the engine's own and is sent exactly as produced, so a
-model that is slow, unavailable or switched off costs a message its tone and
-none of its facts.
+Create a standard topic, then let each caregiver subscribe themselves to it by
+email or text. Stillwatch publishes to the topic and never holds an address or
+a phone number, which is the whole reason to prefer it. SMTP is the fallback
+and does hold them, in configuration.
+
+The access key needs one statement: `sns:Publish` on that topic's ARN.
+
+### Bedrock, for the wording
+
+Request access to one model in the Bedrock console, then name it. Stillwatch
+calls `converse` with the facts of a message and asks for the opening sentence
+in a human voice. What comes back is checked before anyone sees it: too long,
+more than one paragraph, a banned word, or any number that is not in the facts
+it was given, and the deterministic sentence is used instead.
+
+Every reason underneath that sentence is the engine's own and is sent exactly
+as produced. A model that is slow, unavailable, switched off or simply wrong
+costs a message its tone and none of its facts.
+
+The access key needs `bedrock:InvokeModel` on that model, and nothing else.
+
+Cost is a few hundred short calls a month. A household that never goes quiet
+unexpectedly costs nothing at all, because nothing is written when there is
+nothing to say.
 
 ## Checking it works
 

@@ -48,6 +48,8 @@ TONE = {
     "reminder": "They already know. Say only what has changed, which is how long it has been.",
     "all_clear": "Good news. One short sentence is plenty.",
     "blind": "The cameras are down, so nothing can be judged. Be plain that this is a fault.",
+    "answered": ("Somebody has been round and seen her. Tell the others plainly, say who"
+                 " went, and do not add anything they did not say."),
 }
 
 BANNED = re.compile(
@@ -152,7 +154,15 @@ class BedrockNarrator:
         return "".join(block.get("text", "") for block in blocks).strip()
 
     def narrate(self, kind, person, reading, fallback):
-        facts = facts_for(person, reading)
+        return self.narrate_facts(kind, facts_for(person, reading), fallback)
+
+    def narrate_facts(self, kind, facts, fallback):
+        """The same thing, where the facts are already written out.
+
+        Not every message comes from a reading. Somebody pressing a button on
+        the dashboard is a fact about a person, not about a house, and it is
+        worth saying in the same voice as everything else.
+        """
         try:
             text = self._ask(facts, kind)
         except Exception as error:

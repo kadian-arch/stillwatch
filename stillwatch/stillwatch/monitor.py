@@ -435,8 +435,8 @@ def assess(events, baseline, roster, now, last_contact=None, answered=None):
             NO_BASELINE,
             "Cannot tell yet. There is not enough history for this time of day.",
             ["Last movement was in the %s at %s." % (roster.name(last.device_id), _clock(began)),
-             "A baseline for a %s at %02d:00 has not been learned."
-             % (began_daytype, local_hour(began))],
+             "Stillwatch has not watched enough %ss around %02d:00 to know what is"
+             " ordinary for her then." % (began_daytype, local_hour(began))],
             down,
         )
 
@@ -524,16 +524,19 @@ def assess(events, baseline, roster, now, last_contact=None, answered=None):
     if state == NORMAL:
         headline = "All normal. Last movement in the %s %s ago." % (room, human_duration(silence))
     elif state == QUIET:
-        headline = ("Quieter than usual. Nothing has moved for %s, where a quiet spell "
-                    "beginning at that hour normally ends within %s."
+        headline = ("Quieter than usual. Nothing has moved for %s. The longest she "
+                    "normally stays still at this time of day is %s."
                     % (human_duration(silence), human_duration(threshold)))
     else:
-        headline = ("Nothing has moved since %s, which is %s. A quiet spell beginning at "
-                    "that hour normally ends within %s."
+        headline = ("Nothing has moved since %s, which is %s. The longest she normally "
+                    "stays still at that time of day is %s."
                     % (when_text(began, now), human_duration(silence), human_duration(threshold)))
         if missed:
             first = missed[0]
-            label = "up and about" if first.device_id == ANY_INTERIOR else "in the %s" % roster.name(first.device_id)
+            # Camera names are not all room names. "in the Bedroom Door" is
+            # what naming them after doorways does to a sentence.
+            label = ("up and about" if first.device_id == ANY_INTERIOR
+                     else "past the %s camera" % roster.name(first.device_id))
             headline += " She is normally %s by %s." % (label, first.clock())
 
     return _maybe_settle(Assessment(

@@ -1,3 +1,9 @@
 flask>=3.0
 gunicorn>=21.2
 psycopg[binary]>=3.1
+
+# Amazon SNS for delivering a message, and Amazon Bedrock for writing its
+# opening line. Both are optional at runtime and neither is imported unless
+# the environment names one, but the package has to be here for the moment it
+# is, and that moment is an alert.
+boto3>=1.34

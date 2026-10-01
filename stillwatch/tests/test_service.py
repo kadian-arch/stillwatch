@@ -100,9 +100,9 @@ def test_the_gate():
     check("a passcode with no name is refused",
           client.post("/api/session", json={"passcode": "open-sesame-2026"}).status_code == 400)
 
-    good = client.post("/api/session", json={"name": "Aline", "passcode": "open-sesame-2026"})
+    good = client.post("/api/session", json={"name": "Lucie", "passcode": "open-sesame-2026"})
     check("the right passcode signs you in", good.status_code == 200, str(good.status_code))
-    check("and the service knows who you are", good.get_json()["name"] == "Aline")
+    check("and the service knows who you are", good.get_json()["name"] == "Lucie")
     check("the cookie cannot be read by a script",
           "HttpOnly" in good.headers.get("Set-Cookie", ""), good.headers.get("Set-Cookie", ""))
 
@@ -112,6 +112,35 @@ def test_the_gate():
     client.delete("/api/session")
     check("signing out closes it again",
           client.get("/api/day?scenario=live").status_code == 401)
+
+
+def test_each_person_has_their_own_code():
+    section("named people instead of one shared code")
+    client, store = live_app({
+        "STILLWATCH_MEMBERS": "Lucie:7F3K2Q-her-own, KAD:9ZP4MX-his-own",
+        "STILLWATCH_SESSION_SECRET": "a-signing-key",
+    })
+
+    check("the service says which arrangement it is using",
+          client.get("/api/session").get_json()["mode"] == "members")
+
+    check("somebody else's code does not work",
+          client.post("/api/session",
+                      json={"name": "Lucie", "passcode": "9ZP4MX-his-own"}).status_code == 401)
+    check("a name nobody holds is refused",
+          client.post("/api/session",
+                      json={"name": "Stranger", "passcode": "7F3K2Q-her-own"}).status_code == 401)
+
+    good = client.post("/api/session",
+                       json={"name": "lucie", "passcode": "7F3K2Q-her-own"})
+    check("her own code lets her in", good.status_code == 200, str(good.status_code))
+    check("and the household's spelling of her name is what gets recorded",
+          good.get_json()["name"] == "Lucie", good.get_json()["name"])
+
+    episode = "2026-09-20T09:00:00+00:00"
+    client.post("/api/answer", json={"episode": episode, "outcome": "fine"})
+    check("so an answer names a person, not a household",
+          store.answer_for(episode)["by"] == "Lucie")
 
 
 def test_the_gate_cannot_be_sat_on():
@@ -149,17 +178,17 @@ def test_an_answer_carries_a_name_and_tells_everyone():
     client, store = live_app({"STILLWATCH_PASSCODE": "open-sesame-2026",
                               "STILLWATCH_SESSION_SECRET": "a-signing-key"},
                              channels=[inbox])
-    client.post("/api/session", json={"name": "Aline", "passcode": "open-sesame-2026"})
+    client.post("/api/session", json={"name": "Lucie", "passcode": "open-sesame-2026"})
 
     episode = "2026-09-20T09:00:00+00:00"
     reply = client.post("/api/answer", json={"episode": episode, "outcome": "fine"})
     check("the answer is accepted", reply.status_code == 200, str(reply.status_code))
-    check("it records who gave it", reply.get_json()["by"] == "Aline")
-    check("the store keeps the name", store.answer_for(episode)["by"] == "Aline")
+    check("it records who gave it", reply.get_json()["by"] == "Lucie")
+    check("the store keeps the name", store.answer_for(episode)["by"] == "Lucie")
 
     check("everybody else is told", len(inbox.notices) == 1, str(len(inbox.notices)))
     told = inbox.notices[0]
-    check("and told who went", "Aline" in told.body, told.body)
+    check("and told who went", "Lucie" in told.body, told.body)
     check("the message is not another alarm", told.urgency == "info", told.urgency)
 
 
@@ -277,6 +306,7 @@ def main():
 
     for test in (
         test_the_gate,
+        test_each_person_has_their_own_code,
         test_the_gate_cannot_be_sat_on,
         test_a_forged_cookie_is_not_a_session,
         test_an_answer_carries_a_name_and_tells_everyone,

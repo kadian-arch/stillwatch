@@ -334,3 +334,59 @@ if either has gone stale. It runs on a schedule, beside the feed.
 *Consequence:* it says each fault once a day. The lesson of the eighty messages
 applies to the watchdog more than to anything else, because an alarm about the
 plumbing is the first one a reader learns to ignore.
+
+---
+
+## 28. A code each, not a code for the house
+
+The first gate was one passcode for the household. It kept strangers out,
+which was the urgent part, but it made the name beside an answer a claim
+rather than a record: anybody holding the family's one secret could sign in as
+anybody, so "Lucie said all was well" meant only that somebody with the
+code said so.
+
+Naming the people and giving each of them a code of their own costs one
+setting and makes the name mean something. Nobody can sign in under a name
+that is not on the list, the spelling recorded is the household's own rather
+than whatever was typed, and taking somebody off is deleting their line.
+
+The shared code is still there for a family that wants the simpler
+arrangement, and the service says which of the two it is running.
+
+*Consequence:* neither is multi factor, and a care service answering for many
+homes would want an identity provider rather than either. That is written
+down in the security model instead of being left to be discovered.
+
+---
+
+## 29. The engine's vocabulary is not the family's
+
+"A quiet spell beginning around 16:00 normally ends within 26 min" is
+accurate, and it asks the reader to work out what a spell is before they can
+read the sentence. At three in the morning they will not.
+
+It says "the longest she normally stays still at that time of day is 26 min"
+now. Same number, same meaning, nothing to decode. "No baseline has been
+learned for a weekday at 08:00" became "Stillwatch has not watched enough
+weekdays around 08:00 to know what is ordinary for her then".
+
+*Consequence:* the test that guarded the old sentence asserted the word
+"baseline" appeared in it. It now asserts the opposite, that the machinery is
+not named, which is the thing actually worth holding on to.
+
+---
+
+## 30. A camera's own hours, drawn beside its name
+
+The camera list was a list of names. Every camera already carries twenty four
+numbers saying how often it sees her in each hour of a day, learned from her
+own weeks, and the dashboard was throwing them away.
+
+Drawn as a strip beside each name, the kitchen is a morning and an evening,
+the landing is the middle of the night, and the back door is almost nothing.
+Scaled against each camera's own busiest hour rather than against the house,
+so a quiet hallway still has a shape.
+
+*Consequence:* it is the clearest evidence on the page that the thresholds
+were learned rather than typed in, which is the claim the whole product rests
+on and was previously only made in words.

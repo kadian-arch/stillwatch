@@ -158,8 +158,9 @@ class Baseline:
         if seconds is None:
             return "no baseline yet for %s at %02d:00" % (daytype, hour)
         cell = self.quiet_cell(daytype, hour)
-        return ("a quiet spell beginning around %02d:00 on a %s normally ends within"
-                " %s, measured from %d of her own past spells %s" % (
+        return ("the longest she normally stays still, once she has settled around"
+                " %02d:00 on a %s, is %s. That is measured from %d times she has gone"
+                " still %s" % (
                     hour,
                     daytype,
                     human_duration(seconds),

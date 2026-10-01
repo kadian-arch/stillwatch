@@ -9,6 +9,7 @@
 
   var DAY = 1440;
   var ANCHOR_LIMIT = 6;
+  var DIAL_LENGTH = 254.5;
 
   // What a caregiver can say when they have looked. Until one of these is
   // chosen, the only thing that ends an episode is movement, which is no help
@@ -33,6 +34,11 @@
     away: "said she was out, not still.",
     expected: "said this is normal for her now, and Stillwatch has taken it on.",
     helped: "said it was dealt with."
+  };
+
+  var MODE_WORDS = {
+    members: "Sign in with your own name and your own code.",
+    shared: "Sign in with the household code. Your name is kept with anything you answer."
   };
 
   var THEME_KEY = "stillwatch.theme";
@@ -95,7 +101,7 @@
   var refresher = null;
   var following = true;
   var viewing = null;
-  var session = { locked: false, name: null };
+  var session = { locked: false, mode: "open", name: null };
 
   /* ---------- small helpers ---------- */
 
@@ -264,6 +270,9 @@
         + " answer on the family's behalf. Set STILLWATCH_PASSCODE before a real"
         + " household is put behind it."));
     }
+    if (session.locked && !session.name) {
+      ui.gateNote.textContent = MODE_WORDS[session.mode] || MODE_WORDS.shared;
+    }
     ui.who.hidden = !(session.locked && session.name);
     if (session.name) {
       ui.who.textContent = session.name;
@@ -289,6 +298,7 @@
       ui.gateGo.textContent = "Sign in";
       if (!result.ok) {
         ui.gateNote.textContent = result.body.error || "That did not work.";
+        ui.gateName.focus();
         ui.gatePass.value = "";
         ui.gatePass.focus();
         return;
@@ -329,6 +339,7 @@
       var health = both[1] || {};
 
       session.locked = Boolean(health.locked);
+      session.mode = health.mode || "shared";
       session.name = health.name || null;
       paintWho();
 
@@ -492,15 +503,8 @@
     drawMessages();
     drawQuiet();
     drawDevices();
+    drawDialTicks();
     drawFootnote();
-
-    var ladder = day.ladder || {};
-    if (ladder.alert_at) {
-      var quietMark = document.querySelector(".mark-quiet");
-      var concernMark = document.querySelector(".mark-concern");
-      if (quietMark) { quietMark.style.left = (ladder.quiet_at / ladder.alert_at) * 100 + "%"; }
-      if (concernMark) { concernMark.style.left = (ladder.concern_at / ladder.alert_at) * 100 + "%"; }
-    }
 
     var wanted = param("t");
     var start = last;
@@ -628,6 +632,24 @@
     });
   }
 
+  // Where quiet turns into concern, and concern into needing somebody. Drawn
+  // once, from the same numbers the engine judges on.
+  function drawDialTicks() {
+    var ladder = day.ladder || {};
+    var alertAt = ladder.alert_at || 2.5;
+    ui.track.textContent = "";
+
+    [ladder.quiet_at || 1, ladder.concern_at || 1.5].forEach(function (level) {
+      var turn = (135 + 270 * Math.min(1, level / alertAt)) * Math.PI / 180;
+      var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", (70 + 48 * Math.cos(turn)).toFixed(1));
+      line.setAttribute("y1", (70 + 48 * Math.sin(turn)).toFixed(1));
+      line.setAttribute("x2", (70 + 60 * Math.cos(turn)).toFixed(1));
+      line.setAttribute("y2", (70 + 60 * Math.sin(turn)).toFixed(1));
+      ui.track.appendChild(line);
+    });
+  }
+
   function drawQuiet() {
     ui.quietbars.textContent = "";
     var quiet = (day.baseline || {}).quiet || [];
@@ -647,16 +669,42 @@
   }
 
   function drawDevices() {
+    var rhythm = (day.baseline || {}).rhythm || {};
     ui.devices.textContent = "";
+
     (day.devices || []).forEach(function (device) {
       var row = el("li");
       row.dataset.device = device.device_id;
+      row.dataset.zone = device.zone_class;
       row.appendChild(el("span", "dev-dot"));
       row.appendChild(el("span", "dev-name", device.name));
+      row.appendChild(rhythmOf(rhythm[device.device_id] || [], device.name));
       row.appendChild(el("span", "dev-zone",
         device.zone_class === "transit" ? "way out" : "inside"));
       ui.devices.appendChild(row);
     });
+  }
+
+  // How often this one camera sees her, hour by hour, out of her own history.
+  // Scaled against its own busiest hour rather than against the whole house,
+  // because a quiet hallway and a busy kitchen are each worth seeing in shape.
+  function rhythmOf(hours, name) {
+    var strip = el("span", "dev-rhythm");
+    var top = 0;
+    hours.forEach(function (rate) { top = Math.max(top, rate); });
+    strip.title = top
+      ? name + ", busiest around " + clockOf(hours.indexOf(top) * 60)
+      : name + " rarely sees anyone at any hour";
+
+    for (var hour = 0; hour < 24; hour += 1) {
+      var rate = hours[hour] || 0;
+      var tick = el("i");
+      tick.style.height = (top ? Math.max(6, (rate / top) * 100) : 6) + "%";
+      if (top && rate >= top * 0.75) { tick.dataset.peak = "1"; }
+      tick.style.opacity = top ? String(0.35 + 0.65 * (rate / top)) : "0.18";
+      strip.appendChild(tick);
+    }
+    return strip;
   }
 
   // Times belong to the house, never to whoever is looking. A daughter in
@@ -825,7 +873,9 @@
     var share = reading.ratio === null || reading.ratio === undefined
       ? 0
       : Math.min(1, reading.ratio / alertAt);
-    ui.fill.style.width = (share * 100) + "%";
+    // The arc is 270 degrees of a 54 unit circle, so 254.5 units long. Showing
+    // it is a matter of pulling its dash back by the part that is not reached.
+    ui.fill.style.strokeDashoffset = String(DIAL_LENGTH * (1 - share));
 
     var foot = [];
     if (reading.state === "UNKNOWN") {

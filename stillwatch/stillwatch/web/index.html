@@ -136,14 +136,16 @@
 
     <div class="hero-meter">
       <div class="meter" id="meter">
-        <p class="meter-head">
-          <span class="meter-label" id="meterLabel">Still for</span>
-          <strong class="meter-value" id="meterValue">&mdash;</strong>
-        </p>
-        <div class="track" id="track">
-          <div class="fill" id="fill"></div>
-          <span class="mark-quiet"></span>
-          <span class="mark-concern"></span>
+        <div class="dial">
+          <svg class="dial-face" viewBox="0 0 140 118" aria-hidden="true">
+            <path class="dial-bed" d="M 31.8 108.2 A 54 54 0 1 1 108.2 108.2"/>
+            <path class="dial-fill" id="fill" d="M 31.8 108.2 A 54 54 0 1 1 108.2 108.2"/>
+            <g class="dial-ticks" id="track"></g>
+          </svg>
+          <p class="dial-read">
+            <span class="meter-label" id="meterLabel">Still for</span>
+            <strong class="meter-value" id="meterValue">&mdash;</strong>
+          </p>
         </div>
         <p class="meter-foot" id="meterFoot"></p>
         <dl class="glance" id="glance"></dl>
@@ -229,6 +231,9 @@
       <h2 id="cameras-h">Cameras</h2>
     </div>
     <ul class="device-list" id="devices"></ul>
+    <p class="note rhythm-key">The bars beside each camera are the hours it normally
+      sees her, learned from her own weeks. An empty row is a camera she rarely
+      passes at any hour.</p>
     <p class="note">Cameras on a way in or out show when somebody has left the house.
       Cameras inside show that somebody is moving about. Stillwatch reads only whether
       movement was seen and at what time. It does not request, receive or store video,

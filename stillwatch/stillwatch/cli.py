@@ -211,6 +211,11 @@ def cmd_backfill(args):
 STALE_TICK_MINUTES = 20
 STALE_DELIVERY_MINUTES = 60
 
+# How often the same fault is worth repeating, and how many times in a day.
+# Once is too few to survive being missed at breakfast; every run is noise.
+WATCHDOG_GAP_MINUTES = 180
+WATCHDOG_TIMES = 3
+
 
 def cmd_watchdog(args):
     """Check that the thing doing the watching is itself still alive.
@@ -220,9 +225,10 @@ def cmd_watchdog(args):
     judge that has stopped running, or a feed that has stopped arriving, both
     look exactly like a house where nothing is wrong.
 
-    Meant for a scheduler, every ten or fifteen minutes. It says one thing at
-    most per day per fault, because an alarm that repeats is an alarm that gets
-    filtered, which is how this went wrong the first time.
+    Meant for a scheduler, every ten or fifteen minutes. A fault that is still
+    there at lunchtime is worth saying again, so it repeats, but on a long gap
+    and only a few times a day. Saying it every quarter of an hour would teach
+    the reader to filter it, which is how this product went wrong once already.
     """
     from datetime import datetime, timedelta, timezone
 
@@ -274,11 +280,31 @@ def cmd_watchdog(args):
     channels = channels_from_env()
     sent = 0
 
+    def already(name):
+        """Whether this fault has been said enough for now."""
+        if args.force:
+            return False
+        seen = told.get(name)
+        if not isinstance(seen, dict) or seen.get("day") != today:
+            return False
+        if int(seen.get("count") or 0) >= args.times:
+            return "said %d times today, which is enough" % args.times
+        try:
+            spoken = datetime.fromisoformat(seen["last"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        waited = (now - spoken).total_seconds() / 60.0
+        if waited < args.gap_minutes:
+            return "said %d min ago, waiting for the %d min gap" % (
+                round(waited), args.gap_minutes)
+        return False
+
     for name, headline, detail in faults:
         print("FAULT: %s" % headline)
         print("  %s" % detail)
-        if told.get(name) == today and not args.force:
-            print("  already said so today, staying quiet")
+        hold = already(name)
+        if hold:
+            print("  %s" % hold)
             continue
         notice = Notice(
             at=now,
@@ -296,7 +322,10 @@ def cmd_watchdog(args):
         )
         deliver(channels, notice)
         if notice.delivered:
-            told[name] = today
+            seen = told.get(name)
+            count = int(seen.get("count") or 0) if (
+                isinstance(seen, dict) and seen.get("day") == today) else 0
+            told[name] = {"day": today, "count": count + 1, "last": now.isoformat()}
             sent += 1
             print("  told %s" % ", ".join(notice.delivered_to))
         else:
@@ -308,9 +337,16 @@ def cmd_watchdog(args):
 
 
 def cmd_notify_test(args):
-    """Send one message through whatever channels the environment names."""
+    """Send one message through whatever channels the environment names.
+
+    Also exercises the narrator, if one is configured, because a model that
+    cannot be reached and a model that writes something unusable both fail the
+    same quiet way at runtime: the deterministic sentence goes out and nobody
+    is told why. Here it is said out loud.
+    """
     from datetime import datetime, timezone
 
+    from .narrate import narrator_from_env
     from .notify import Notice, channels_from_env
 
     channels = channels_from_env()
@@ -321,14 +357,32 @@ def cmd_notify_test(args):
         print("  STILLWATCH_SNS_TOPIC_ARN", file=sys.stderr)
         return 2
 
+    lead = "This is a test of the alert path for %s." % args.person
+    reasons = ("- If this reached you, a real alert would too.\n"
+               "- Nothing is wrong. Nobody needs checking on.")
+
+    narrator = narrator_from_env()
+    if narrator is None:
+        print("  no model configured, so the wording is the engine's own")
+    else:
+        facts = "\n".join([
+            "Who lives here: %s" % args.person,
+            "What has happened: nothing. This is a test of the message path.",
+            "What to say: that this is a test and nobody needs checking on.",
+        ])
+        narration = narrator.narrate_facts("all_clear", facts, lead)
+        if narration.used_model:
+            print("  %-8s wrote: %s" % ("bedrock", narration.text))
+            lead = narration.text
+        else:
+            print("  %-8s not used: %s" % ("bedrock", narration.note))
+
     notice = Notice(
         at=datetime.now(timezone.utc),
         kind="alert",
         urgency="urgent",
         subject="Stillwatch: test message, no action needed",
-        body=("This is a test of the alert path for %s.\n\n"
-              "- If this reached you, a real alert would too.\n"
-              "- Nothing is wrong. Nobody needs checking on." % args.person),
+        body="%s\n\n%s" % (lead, reasons),
         state="ALERT",
     )
 
@@ -475,7 +529,10 @@ def cmd_serve(args):
         watcher = LiveWatcher(store, args.person, channels).start()
         print("  watching for silence, telling: %s" % ", ".join(watcher.channels))
 
-    create_app(source, store=store, webhook_secret=secret, channels=channels).run(
+    from .narrate import narrator_from_env
+
+    create_app(source, store=store, webhook_secret=secret, channels=channels,
+               narrator=narrator_from_env()).run(
         host=args.host, port=args.port, debug=False)
     return 0
 
@@ -531,8 +588,12 @@ def build_parser():
                        or os.environ.get("STILLWATCH_DB", "events.db"))
     guard.add_argument("--tick-minutes", type=int, default=STALE_TICK_MINUTES)
     guard.add_argument("--delivery-minutes", type=int, default=STALE_DELIVERY_MINUTES)
+    guard.add_argument("--times", type=int, default=WATCHDOG_TIMES,
+                       help="How many times a day to repeat the same fault.")
+    guard.add_argument("--gap-minutes", type=int, default=WATCHDOG_GAP_MINUTES,
+                       help="How long to leave between repeats of the same fault.")
     guard.add_argument("--force", action="store_true",
-                       help="Send even if the same fault was reported today.")
+                       help="Send now, whatever has already been said today.")
     guard.set_defaults(handler=cmd_watchdog)
 
     prober = commands.add_parser(

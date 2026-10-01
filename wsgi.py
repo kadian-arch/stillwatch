@@ -14,7 +14,11 @@ Configuration comes from the environment, never from a file in the repository:
     STILLWATCH_BEDROCK_MODEL_ID        optional, to have the opening sentence
                                        of a message written rather than built
     STILLWATCH_NOTIFY                  1 to judge on a timer and send messages
-    STILLWATCH_PASSCODE                set it and the household is behind a
+    STILLWATCH_MEMBERS                 who may sign in and the code each of
+                                       them uses, as Name:code, Name:code
+    STILLWATCH_DEMO_DATA               a folder for the recorded days, built
+                                       on first start if it is empty
+    STILLWATCH_PASSCODE                one shared code instead of the above,
                                        sign in; leave it empty and the page
                                        says out loud that anyone can see it
     STILLWATCH_SESSION_SECRET          optional, what session cookies are
@@ -41,8 +45,23 @@ source = LiveSource(store, person=os.environ.get("STILLWATCH_PERSON", "The house
 # Off unless a folder is named. A live deployment shows live events or it says
 # it is standing by; recorded days are for looking at the engine offline, and
 # are labelled as demonstrations wherever they do appear.
+#
+# Built here if they are missing. A container starts with an empty disk every
+# time it restarts, so anything generated rather than committed has to be
+# generated again, and a few megabytes of events that rebuild in a second do
+# not belong in the repository.
 _demo_folder = os.environ.get("STILLWATCH_DEMO_DATA", "").strip()
 if _demo_folder:
+    from stillwatch.demo import ensure
+
+    try:
+        if ensure(_demo_folder, repo_root=os.path.dirname(os.path.abspath(__file__))):
+            print("built the recorded days into %s" % _demo_folder)
+    except Exception as error:
+        # Never worth failing to start over. The household is the point; the
+        # recorded days are an illustration beside it.
+        print("could not build the recorded days: %s" % error)
+
     demo = ReplaySource(_demo_folder)
     if demo.scenarios():
         source = CompositeSource(source, demo)
@@ -50,15 +69,18 @@ if _demo_folder:
 # Built once and shared. The watcher sends what it decides on a timer, and
 # the dashboard sends the one message a timer cannot produce: somebody saying
 # they have been and looked.
+from stillwatch.narrate import narrator_from_env
 from stillwatch.notify import channels_from_env
 
 channels = channels_from_env()
+narrator = narrator_from_env()
 
 app = create_app(
     source,
     store=store,
     webhook_secret=os.environ.get("STILLWATCH_RING_WEBHOOK_SECRET", "").strip(),
     channels=channels,
+    narrator=narrator,
 )
 
 # Nobody opens a dashboard at four in the morning, which is when it matters, so
@@ -67,7 +89,6 @@ app = create_app(
 # its own silence. This assumes a single worker; more than one would each hold
 # their own notifier and a caregiver would hear everything twice.
 if os.environ.get("STILLWATCH_NOTIFY", "").strip() == "1":
-    from stillwatch.narrate import narrator_from_env
     from stillwatch.watch import LiveWatcher
 
     # Bedrock rewrites the opening sentence of a message and nothing else. The
@@ -77,5 +98,5 @@ if os.environ.get("STILLWATCH_NOTIFY", "").strip() == "1":
         store,
         os.environ.get("STILLWATCH_PERSON", "The household"),
         channels,
-        narrator=narrator_from_env(),
+        narrator=narrator,
     ).start()

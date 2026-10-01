@@ -358,7 +358,7 @@ time from the Ring app.</p>
 
 
 def create_app(source, store=None, webhook_secret=None, ring=None,
-               channels=None, environ=None):
+               channels=None, environ=None, narrator=None):
     app = Flask(__name__, static_folder=None)
     cache = {}
     lock = threading.Lock()
@@ -367,10 +367,15 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
     channels = list(channels or [])
 
     passcode = access.passcode_for(environ)
+    members = access.members_for(environ)
     key = access.signing_key(environ)
-    # A passcode with nothing to sign cookies with would lock everybody out
-    # including the household, so the gate is only up when both exist.
-    locked = bool(passcode and key)
+    # Named people if there are any, one shared code if not, open if neither.
+    # A code with nothing to sign cookies with would lock out the household
+    # along with everybody else, so the gate only goes up when both exist.
+    mode = "members" if members else ("shared" if passcode else "open")
+    locked = bool(key) and mode != "open"
+    if not locked:
+        mode = "open"
     sign_in_throttle = access.Throttle(limit=8, seconds=15 * 60)
     answer_throttle = access.Throttle(limit=30, seconds=60)
 
@@ -436,24 +441,31 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
 
     @app.get("/api/session")
     def session():
-        return jsonify({"locked": locked, "name": viewer()})
+        return jsonify({"locked": locked, "mode": mode, "name": viewer()})
 
     @app.post("/api/session")
     def sign_in():
         if not locked:
-            return jsonify({"locked": False, "name": None}), 200
+            return jsonify({"locked": False, "mode": mode, "name": None}), 200
         if not sign_in_throttle.allow(access.caller(request)):
             return jsonify({"error": "too many attempts, wait a few minutes"}), 429
 
         body = request.get_json(silent=True) or request.form or {}
-        name = access.clean_name(body.get("name"))
-        if not name:
+        given = access.clean_name(body.get("name"))
+        if not given:
             abort(400, description="a name is needed, so the family can see who answered")
-        if not access.matches(body.get("passcode"), passcode):
-            # Deliberately the same answer whatever was wrong with it.
-            return jsonify({"error": "that passcode is not right"}), 401
 
-        reply = make_response(jsonify({"locked": True, "name": name}))
+        if mode == "members":
+            name = access.check_member(members, given, body.get("passcode"))
+        else:
+            name = given if access.matches(body.get("passcode"), passcode) else None
+
+        if not name:
+            # Deliberately the same answer whatever was wrong with it, so that
+            # it never says whether the name or the code was the problem.
+            return jsonify({"error": "that name and code do not match"}), 401
+
+        reply = make_response(jsonify({"locked": True, "mode": mode, "name": name}))
         reply.set_cookie(
             access.COOKIE,
             access.issue(name, key),
@@ -467,7 +479,7 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
 
     @app.delete("/api/session")
     def sign_out():
-        reply = make_response(jsonify({"locked": locked, "name": None}))
+        reply = make_response(jsonify({"locked": locked, "mode": mode, "name": None}))
         reply.delete_cookie(access.COOKIE, path="/")
         return reply
 
@@ -480,6 +492,7 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
             "webhook": bool(store is not None and webhook_secret),
             "ring_linked": bool(store is not None and store.is_linked()),
             "locked": locked,
+            "mode": mode,
             "name": viewer(),
         }
         if store is not None:
@@ -633,7 +646,7 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
         # Everybody who would have been chased about this hears that it is
         # handled, and by whom. A family of three should not each phone.
         told = announce_answer(channels, source.persona(), outcome, by, now,
-                               note=note, episode=episode)
+                               note=note, episode=episode, narrator=narrator)
         return jsonify({"episode": episode, "outcome": outcome, "by": by,
                         "means": OUTCOMES[outcome], "told": told}), 200
 

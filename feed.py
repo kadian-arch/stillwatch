@@ -104,6 +104,19 @@ def post(url, secret, records, timeout=20):
         return json.loads(reply.read().decode("utf-8") or "{}")
 
 
+HEARTBEAT_MINUTES = 30
+
+
+def _beat(at, device_id="front_door"):
+    stamp = at.astimezone(timezone.utc).isoformat()
+    return {
+        "id": "heartbeat-" + stamp,
+        "device_id": device_id,
+        "event_type": "device_online",
+        "created_at": stamp,
+    }
+
+
 def heartbeat(url, secret, at, device_id="front_door"):
     """Say we are still here, even when nobody has moved.
 
@@ -111,13 +124,24 @@ def heartbeat(url, secret, at, device_id="front_door"):
     are indistinguishable, and the service would raise the alarm about its own
     silence. Real Ring devices report their status the same way.
     """
-    stamp = at.astimezone(timezone.utc).isoformat()
-    post(url, secret, [{
-        "id": "heartbeat-" + stamp,
-        "device_id": device_id,
-        "event_type": "device_online",
-        "created_at": stamp,
-    }])
+    post(url, secret, [_beat(at, device_id)])
+
+
+def heartbeats(url, secret, start, end, every_minutes=HEARTBEAT_MINUTES):
+    """Fill a stretch with the reports the cameras would have made through it.
+
+    Motion on its own is not enough to repair a gap. A day with movement in it
+    but no sign of the cameras checking in still reads as "cannot tell, nothing
+    has reported", because that is exactly what it looked like at the time.
+    """
+    beats = []
+    moment = start
+    while moment <= end:
+        beats.append(_beat(moment))
+        moment += timedelta(minutes=every_minutes)
+    for index in range(0, len(beats), CHUNK):
+        post(url, secret, beats[index:index + CHUNK])
+    return len(beats)
 
 
 def send(url, secret, events, label, rng=None,
@@ -181,6 +205,9 @@ def main():
     parser.add_argument("--seed", type=int, default=7, help="Simulator seed.")
     parser.add_argument("--catch-up", action="store_true",
                         help="Post whatever is due since the last stored event, then exit.")
+    parser.add_argument("--since", default="",
+                        help="Catch up from this date instead of the last stored event, "
+                             "as YYYY-MM-DD. For repairing a stretch the feed missed.")
     parser.add_argument("--clean", action="store_true",
                         help="Deliver exactly once and in order, which no real webhook does.")
     args = parser.parse_args()
@@ -209,7 +236,16 @@ def main():
         # and nothing would ever be generated again.
         last = EventStore(args.db).last_event_at(kinds=("motion", "ding"))
         now = datetime.now(timezone.utc)
-        if last is None:
+
+        if args.since:
+            # Repairing a stretch the feed missed. Everything in it is posted
+            # again, and everything already stored is refused on its id, so
+            # there is no way for this to double anything up.
+            first = date.fromisoformat(args.since)
+            span = (now.date() - first).days + 1
+            last = None
+            print("\nfilling in from %s" % first.isoformat())
+        elif last is None:
             first = now.date() - timedelta(days=args.seed_days)
             span = args.seed_days + 1
             print("\nnothing stored yet, filling in %d days" % args.seed_days)
@@ -221,8 +257,13 @@ def main():
         due = [event for event in sim.generate(first, span)
                if event.created_at <= now and (last is None or event.created_at > last)]
         send(args.url, secret, due, "to %s" % now.strftime("%H:%M"), rng, dup, drop)
-        heartbeat(args.url, secret, now)
-        print("  heartbeat sent")
+
+        # Across the whole stretch, not only at the end. A day that was
+        # repaired with movement alone still reads as a day nothing reported.
+        from_moment = last or datetime.combine(first, datetime.min.time(), timezone.utc)
+        sent = heartbeats(args.url, secret, from_moment, now)
+        print("  %d camera reports sent across %s to %s"
+              % (sent, from_moment.strftime("%d %b %H:%M"), now.strftime("%d %b %H:%M")))
         return 0
 
     today = datetime.now(timezone.utc).date()

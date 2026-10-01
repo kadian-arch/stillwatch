@@ -39,6 +39,42 @@ def passcode_for(environ):
     return (environ.get("STILLWATCH_PASSCODE") or "").strip()
 
 
+def members_for(environ):
+    """The people allowed in, each with a code of their own.
+
+    Read from one setting, as `Lucie:7F3K2Q, KAD:9ZP4MX`. One shared code
+    tells you a household answered; a code each tells you which of them did,
+    which is the difference between a record and a guess. Where a family wants
+    the simpler arrangement, the shared passcode is still there.
+
+    Keyed on a case folded name so that signing in is forgiving, and the name
+    that gets recorded is always the spelling the household chose, never the
+    spelling that was typed.
+    """
+    raw = (environ.get("STILLWATCH_MEMBERS") or "").strip()
+    people = {}
+    for entry in raw.split(","):
+        name, _, code = entry.strip().partition(":")
+        name, code = clean_name(name), code.strip()
+        if name and code:
+            people[name.casefold()] = (name, code)
+    return people
+
+
+def check_member(people, name, code):
+    """The household's own spelling of that person's name, or None.
+
+    A name nobody holds is compared against a decoy of the same shape, so the
+    time taken to refuse it says nothing about whether that person exists.
+    """
+    found = people.get(clean_name(name).casefold())
+    if not found:
+        matches(code, "x" * 32)
+        return None
+    canonical, expected = found
+    return canonical if matches(code, expected) else None
+
+
 def signing_key(environ):
     """What session cookies are signed with.
 

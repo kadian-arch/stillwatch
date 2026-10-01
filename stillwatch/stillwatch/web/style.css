@@ -614,39 +614,50 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
   font-weight: 600;
 }
 .meter-value {
-  font-size: 31px;
+  font-size: 30px;
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.015em;
 }
 
-.track {
-  position: relative;
-  height: 9px;
-  margin-top: 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--line-2);
-  border-radius: 999px;
-  overflow: hidden;
+/* A dial, drawn as one 270 degree arc with the value arc laid over it and
+   revealed by its dash offset. The two ticks are where quiet becomes concern
+   and concern becomes an alert, so the reading is placed against the two
+   thresholds rather than against nothing. */
+.dial { position: relative; display: grid; place-items: center; }
+.dial-face { width: 100%; max-width: 230px; display: block; overflow: visible; }
+.dial-bed,
+.dial-fill {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
 }
-.fill {
+.dial-bed { stroke: var(--surface-2); }
+.dial-fill {
+  stroke: var(--state);
+  stroke-dasharray: 254.5;
+  stroke-dashoffset: 254.5;
+  transition: stroke-dashoffset 0.75s var(--ease), stroke 0.5s var(--ease);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--state) 38%, transparent));
+}
+.dial-ticks line {
+  stroke: var(--ink);
+  stroke-width: 2;
+  opacity: 0.22;
+  stroke-linecap: round;
+}
+.dial-read {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  border-radius: 999px;
-  background: var(--state);
-  transition: width 0.55s var(--ease), background 0.5s var(--ease);
+  top: 54%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  text-align: center;
+  pointer-events: none;
 }
-.mark-quiet, .mark-concern {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1.5px;
-  background: var(--ink);
-  opacity: 0.2;
-}
-.mark-quiet { left: 40%; }
-.mark-concern { left: 60%; }
 
 .meter-foot { margin-top: 11px; color: var(--muted); font-size: 12.6px; line-height: 1.55; }
 
@@ -1006,12 +1017,19 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.14); }
 }
 .bar {
   border-radius: 3px 3px 1px 1px;
-  background: color-mix(in srgb, var(--quiet) 45%, transparent);
+  /* Night at the bottom of the column, midday at the top, so the shape of the
+     day is readable before any of the numbers are. */
+  background: linear-gradient(to top,
+    color-mix(in srgb, var(--quiet) 72%, transparent),
+    color-mix(in srgb, var(--quiet) 30%, transparent));
   min-height: 2px;
-  transition: background 0.2s, transform 0.2s var(--ease);
+  transition: filter 0.2s, transform 0.2s var(--ease);
 }
-.bar:hover { background: var(--quiet); transform: scaleY(1.03); transform-origin: bottom; }
-.bar[data-now="1"] { background: var(--state); }
+.bar:hover { filter: brightness(1.35); transform: scaleY(1.03); transform-origin: bottom; }
+.bar[data-now="1"] {
+  background: linear-gradient(to top, var(--state),
+    color-mix(in srgb, var(--state) 55%, transparent));
+}
 
 /* ---------- habits ---------- */
 
@@ -1050,12 +1068,43 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.14); }
 
 .device-list { display: grid; }
 .device-list li {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 11px;
-  padding: 10px 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--line-2);
   font-size: 13.6px;
+}
+
+/* Twenty four hours of one camera's own history, as thin as it can be and
+   still be read. This is the learning made visible: the kitchen is a morning
+   and an evening, the landing is the middle of the night. */
+.dev-rhythm {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  align-items: end;
+  gap: 1px;
+  width: 92px;
+  height: 20px;
+  opacity: 0.85;
+}
+.dev-rhythm i {
+  display: block;
+  min-height: 1.5px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--normal) 60%, transparent);
+}
+.dev-rhythm i[data-peak="1"] { background: var(--normal); }
+.device-list li[data-zone="transit"] .dev-rhythm i {
+  background: color-mix(in srgb, var(--away) 55%, transparent);
+}
+.device-list li[data-zone="transit"] .dev-rhythm i[data-peak="1"] { background: var(--away); }
+.device-list li[data-down="1"] .dev-rhythm { opacity: 0.3; }
+.rhythm-key { margin-top: 14px; }
+
+@media (max-width: 420px) {
+  .dev-rhythm { display: none; }
 }
 .device-list li:last-child { border-bottom: 0; }
 .dev-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--normal); flex: none; }

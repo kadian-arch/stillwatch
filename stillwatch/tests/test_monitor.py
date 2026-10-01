@@ -295,8 +295,12 @@ def test_no_history_says_so():
     unlearned = assess(seeded, Baseline(), people, base + timedelta(hours=3))
     check("events without a baseline cannot be judged", unlearned.state == UNKNOWN,
           unlearned.state)
-    check("the reason names the missing baseline",
-          any("baseline" in reason for reason in unlearned.reasons),
+    # Said in words a family would use, not in the engine's. "No baseline has
+    # been learned for a weekday at 08:00" is accurate and means nothing to
+    # the person reading it at the time it matters.
+    check("the reason explains the gap without naming the machinery",
+          any("not watched enough" in reason for reason in unlearned.reasons)
+          and not any("baseline" in reason for reason in unlearned.reasons),
           " ".join(unlearned.reasons))
 
 
@@ -328,12 +332,12 @@ def test_an_answer_settles_it():
     check("the fall still reaches an alert", worst.state == ALERT)
 
     episode = worst.silence_began.isoformat()
-    answered = {episode: {"episode": episode, "outcome": "fine", "by": "Aline",
+    answered = {episode: {"episode": episode, "outcome": "fine", "by": "Lucie",
                           "at": at(target, 14, 30).isoformat()}}
 
     after = assess(stream, baseline, roster(), worst.at, answered=answered)
     check("the state becomes settled", after.state == SETTLED, after.state)
-    check("it says who looked", "Aline" in after.headline, after.headline)
+    check("it says who looked", "Lucie" in after.headline, after.headline)
     check("it stops needing attention", not after.needs_attention)
     check("the reasoning is still there, not thrown away",
           any("Last movement was in the" in reason for reason in after.reasons),

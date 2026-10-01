@@ -33,6 +33,15 @@ ALL_CLEAR_NOTICE = "all_clear"
 BLIND_NOTICE = "blind"
 ANSWERED_NOTICE = "answered"
 
+# What each answer means, in words a model can be handed without being told
+# anything it could get wrong.
+ANSWER_FACTS = {
+    "fine": "they checked and all is well",
+    "away": "she was out of the house, not still",
+    "expected": "this is normal for her now",
+    "helped": "something was wrong and it has been dealt with",
+}
+
 LOW = "low"
 URGENT = "urgent"
 INFO = "info"
@@ -175,7 +184,7 @@ def answer_notice(person, outcome, by, at, note=None, episode=None):
     lines = [lead, ""]
     if note:
         lines.append("- They added: %s" % note)
-    lines.append("- Nobody else needs to check. Stillwatch has stopped asking about this.")
+    lines.append("- Stillwatch has stopped asking about this one.")
     lines.append("- It is still watching, and will write again if anything changes.")
 
     return Notice(at=at, kind=ANSWERED_NOTICE, urgency=INFO,
@@ -183,11 +192,26 @@ def answer_notice(person, outcome, by, at, note=None, episode=None):
                   body="\n".join(lines), state=SETTLED, episode=episode)
 
 
-def announce_answer(channels, person, outcome, by, at, note=None, episode=None):
+def announce_answer(channels, person, outcome, by, at, note=None, episode=None,
+                    narrator=None):
     """Tell everyone an answer has come in. Returns the channels that took it."""
     if not channels:
         return []
     notice = answer_notice(person, outcome, by, at, note=note, episode=episode)
+
+    if narrator is not None:
+        # The opening line only, same as everywhere else. What was actually
+        # said is underneath it and is never handed to a model to reword.
+        lead, separator, rest = notice.body.partition("\n")
+        facts = "\n".join([
+            "Who lives here: %s" % person,
+            "Who went to check: %s" % ((by or "").strip() or "somebody with dashboard access"),
+            "What they said: %s" % ANSWER_FACTS.get(outcome, outcome),
+        ] + (["What they added: %s" % note] if note else []))
+        narration = narrator.narrate_facts(ANSWERED_NOTICE, facts, lead)
+        notice.body = narration.text + separator + rest
+        notice.written_by_model = narration.used_model
+
     deliver(channels, notice)
     return list(notice.delivered_to)
 
