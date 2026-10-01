@@ -8,11 +8,13 @@ ignore it, and an alert that gets ignored is worse than no alert.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from .clock import clock, local_hour, midnight_before
+from .clock import clock, local, local_date, local_hour, midnight_before
 from datetime import datetime, timedelta
 
 from .model import (
+    DING,
     ONLINE,
+    Timeline,
     DeviceRoster,
     interior_events,
     is_down,
@@ -35,6 +37,7 @@ CONCERN = "CONCERN"
 ALERT = "ALERT"
 AWAY = "AWAY"
 UNKNOWN = "UNKNOWN"
+SETTLED = "SETTLED"
 
 BLIND = "blind"
 NO_HISTORY = "no_history"
@@ -42,7 +45,7 @@ NO_BASELINE = "no_baseline"
 NO_CONTACT = "no_contact"
 
 LADDER = (NORMAL, QUIET, CONCERN, ALERT)
-STATES = LADDER + (AWAY, UNKNOWN)
+STATES = LADDER + (AWAY, UNKNOWN, SETTLED)
 
 QUIET_AT = 1.0
 CONCERN_AT = 1.5
@@ -66,6 +69,25 @@ CONTACT_GAP_SECONDS = 45 * 60
 # full day with no return, that reasoning stops holding.
 ABSENCE_ALARM_SECONDS = 24 * 3600
 
+# Two interior cameras in different rooms seeing movement this close together
+# is two people, once the cameras watching the way between rooms are left out.
+# A landing camera and a bedroom camera fire together every time one person
+# steps through the door, which is why the baseline learns which cameras those
+# are before this is allowed to mean anything.
+TOGETHER_SECONDS = 5
+
+# How far back to look for that company before the house went quiet. Somebody
+# who visited yesterday says nothing about this morning.
+COMPANY_LOOKBACK_SECONDS = 3 * 3600
+
+# What a caregiver said when they looked, and what Stillwatch does with it.
+ANSWER_WORDS = {
+    "fine": "looked in, and all was well",
+    "away": "said she was out, not still",
+    "expected": "said this is normal for her now",
+    "helped": "said something was wrong and it has been dealt with",
+}
+
 
 @dataclass
 class Assessment:
@@ -86,6 +108,9 @@ class Assessment:
     absence_unusual: bool = False
     capped_by_outage: bool = False
     unknown_reason: str = None
+    company_at: datetime = None
+    unanswered_ding_at: datetime = None
+    answer: dict = None
 
     @property
     def rung(self):
@@ -95,6 +120,10 @@ class Assessment:
     @property
     def needs_attention(self):
         return self.state in (CONCERN, ALERT)
+
+    @property
+    def settled(self):
+        return self.state == SETTLED
 
     def to_dict(self):
         return {
@@ -118,11 +147,106 @@ class Assessment:
             "absence_unusual": self.absence_unusual,
             "capped_by_outage": self.capped_by_outage,
             "unknown_reason": self.unknown_reason,
+            "company_at": self.company_at.isoformat() if self.company_at else None,
+            "unanswered_ding_at": (self.unanswered_ding_at.isoformat()
+                                   if self.unanswered_ding_at else None),
+            "answer": dict(self.answer) if self.answer else None,
         }
 
 
 def _clock(moment):
     return clock(moment)
+
+
+def when_text(moment, now):
+    """A time, said the way somebody would say it out loud.
+
+    "10:32" is fine for this morning and badly wrong for a silence that began
+    before midnight. A caregiver reading "no movement since 10:32" at eleven in
+    the morning has to be told whether that was an hour ago or a day ago.
+    """
+    if moment is None:
+        return "an unknown time"
+    gap = (local_date(now) - local_date(moment)).days
+    if gap <= 0:
+        return clock(moment)
+    if gap == 1:
+        return "%s yesterday" % clock(moment)
+    if gap < 7:
+        return "%s on %s" % (clock(moment), local(moment).strftime("%A"))
+    return "%s on %s" % (clock(moment), local(moment).strftime("%d %B").lstrip("0"))
+
+
+def _company(inside, until, passages=()):
+    """When two rooms last moved at once, which takes two people.
+
+    Stillwatch watches a house, not a person. If somebody else is in it, their
+    movement reads exactly like hers. This is the one case the cameras can
+    settle on their own: nobody is in two rooms at the same moment, so motion
+    in two rooms seconds apart is two people, and that is worth saying out
+    loud rather than quietly judging the wrong person.
+    """
+    passages = set(passages or ())
+    since = until - timedelta(seconds=COMPANY_LOOKBACK_SECONDS)
+    window = [event for event in inside
+              if since <= event.at <= until and event.device_id not in passages]
+    latest = None
+    for index in range(len(window)):
+        event = window[index]
+        for ahead in range(index + 1, len(window)):
+            other = window[ahead]
+            if (other.at - event.at).total_seconds() > TOGETHER_SECONDS:
+                break
+            if other.device_id != event.device_id:
+                latest = other.at
+    return latest
+
+
+def _unanswered_ding(events, inside, began, now):
+    """A caller who rang the bell during the silence and got no answer.
+
+    Somebody at the door is the loudest thing that happens to a quiet house.
+    Not being answered is a stronger sign than the quiet on its own.
+    """
+    moved_after = inside[-1].at if inside else None
+    for event in reversed(events):
+        if event.at > now:
+            continue
+        if event.at < began:
+            break
+        if event.kind != DING:
+            continue
+        if moved_after is None or moved_after < event.at:
+            return event.at
+    return None
+
+
+def _settle(reading, answer):
+    """Fold a caregiver's answer into what the dashboard says.
+
+    The facts underneath do not change, and they stay on the page. What changes
+    is the question being asked: nobody needs to be told again that the house
+    is quiet once somebody has gone and looked.
+    """
+    said = ANSWER_WORDS.get(answer.get("outcome"), "has answered this")
+    who = (answer.get("by") or "").strip() or "Somebody"
+    try:
+        at = _clock(datetime.fromisoformat(answer["at"]))
+    except (KeyError, TypeError, ValueError):
+        at = None
+
+    headline = "%s %s." % (who, said)
+    reasons = [reading.headline] + list(reading.reasons)
+    if at:
+        reasons.insert(0, "Answered at %s from the dashboard." % at)
+    if answer.get("note"):
+        reasons.insert(1, "Note: %s" % answer["note"])
+
+    reading.state = SETTLED
+    reading.headline = headline
+    reading.reasons = reasons
+    reading.answer = dict(answer)
+    return reading
 
 
 def _down_now(spans, device_ids, now):
@@ -140,7 +264,7 @@ def _window_bounds(name):
     return 0, 1440
 
 
-def _missed_anchors(baseline, roster, inside, spans, now, began):
+def _missed_anchors(baseline, roster, line, spans, now, began):
     """Anchors that fell due during the current silence and did not happen.
 
     A habit missed before the silence began says nothing about it. Someone who
@@ -149,7 +273,7 @@ def _missed_anchors(baseline, roster, inside, spans, now, began):
     """
     midnight = midnight_before(now)
     minute_now = (now - midnight).total_seconds() / 60.0
-    today = [event for event in inside if event.at >= midnight]
+    today = line.interior_between(midnight, now)
 
     missed = []
     for anchor in baseline.anchors_for(daytype_of(now)):
@@ -195,7 +319,7 @@ def _away_assessment(now, roster, baseline, last, departure, silence, threshold,
         "The %s reported activity at %s, right as the house went quiet."
         % (door, _clock(departure.at)),
         "Nothing inside has moved since %s, which is what an empty house looks like."
-        % _clock(began),
+        % when_text(began, now),
     ]
 
     unusual = limit is not None and silence > limit
@@ -206,16 +330,16 @@ def _away_assessment(now, roster, baseline, last, departure, silence, threshold,
     if silence > ABSENCE_ALARM_SECONDS:
         state = CONCERN
         headline = "Out since %s, now %s, with no sign of a return." % (
-            _clock(began), human_duration(silence))
+            when_text(began, now), human_duration(silence))
         reasons.append("More than a day out with nobody coming back is worth a call.")
     elif unusual:
         state = AWAY
         headline = "Out since %s, now %s, which is longer than she is usually out." % (
-            _clock(began), human_duration(silence))
+            when_text(began, now), human_duration(silence))
     else:
         state = AWAY
         headline = "Out since %s. The %s opened, so the quiet is expected." % (
-            _clock(began), door)
+            when_text(began, now), door)
 
     return Assessment(
         at=now, state=state, headline=headline, reasons=reasons,
@@ -246,16 +370,24 @@ def _ladder_state(ratio, missed):
     return state
 
 
-def assess(events, baseline, roster, now, last_contact=None):
+def assess(events, baseline, roster, now, last_contact=None, answered=None):
     """Judge the household as at a single moment.
 
     `last_contact` is when anything was last delivered to us, whatever it
     contained. It is separate from the events because an empty delivery still
     proves the connection is alive, and a house with nobody moving in it
     produces no events at all.
+
+    `answered` looks up what a caregiver said about a stretch of quiet, keyed
+    by the moment it began. Once somebody has gone and looked, the judgement
+    stands but the question does not, and the dashboard should stop asking it.
     """
-    events = [event for event in events if event.at <= now]
-    spans = outage_spans(events)
+    # Arranged once, in time order, whatever order the caller had them in.
+    # One caller did not have them in order at all, and the judgement that
+    # came out named the wrong camera at the wrong time.
+    line = events if isinstance(events, Timeline) else Timeline(events, roster)
+    events = line.upto(now)
+    spans = line.spans
     interior_ids = roster.interior_ids()
     down = _down_now(spans, interior_ids, now)
 
@@ -286,7 +418,7 @@ def assess(events, baseline, roster, now, last_contact=None):
             down,
         )
 
-    inside = interior_events(events, roster)
+    inside = line.interior_upto(now)
     if not inside:
         return _unknown(now, NO_HISTORY, "Cannot tell. No movement has ever been recorded inside.",
                         ["There is no interior history to compare against."], down)
@@ -309,18 +441,21 @@ def assess(events, baseline, roster, now, last_contact=None):
         )
 
     ratio = silence / threshold
-    missed = _missed_anchors(baseline, roster, inside, spans, now, began)
+    missed = _missed_anchors(baseline, roster, line, spans, now, began)
 
     lookback = began - timedelta(seconds=DEPARTURE_LOOKBACK)
     lookahead = min(now, began + timedelta(seconds=DEPARTURE_LOOKAHEAD))
     # Only a door event at the start of the silence explains it. A caller
-    # ringing the bell hours later is not someone coming home.
-    departures = [event for event in transit_events(events, roster)
-                  if lookback <= event.at <= lookahead]
+    # ringing the bell hours later is not someone coming home. Narrowed by
+    # time before anything is classified, because the window is minutes wide
+    # and the history behind it is weeks.
+    departures = transit_events(line.between(lookback, lookahead), roster)
 
     if departures:
-        return _away_assessment(now, roster, baseline, last, departures[-1],
-                                silence, threshold, ratio, down)
+        return _maybe_settle(
+            _away_assessment(now, roster, baseline, last, departures[-1],
+                             silence, threshold, ratio, down),
+            answered)
 
     state = _ladder_state(ratio, missed)
 
@@ -340,12 +475,24 @@ def assess(events, baseline, roster, now, last_contact=None):
 
     room = roster.name(last.device_id)
 
+    company_at = _company(inside, began, baseline.passages)
+    ding_at = _unanswered_ding(events, inside, began, now)
+
     reasons = [
         "Last movement was in the %s at %s, %s ago."
-        % (room, _clock(began), human_duration(silence)),
+        % (room, when_text(began, now), human_duration(silence)),
         baseline.describe_quiet(began_daytype, local_hour(began)).capitalize() + ".",
         "No door has been used since the house went quiet, so she is at home.",
     ]
+    if ding_at is not None:
+        reasons.append("Somebody rang the doorbell at %s and nothing moved afterwards."
+                       % when_text(ding_at, now))
+    if company_at is not None:
+        reasons.append(
+            "Two rooms moved at once at %s, so somebody else was in the house "
+            "shortly before the quiet began. Stillwatch watches the house, not "
+            "the person, and cannot tell which of them has stopped."
+            % when_text(company_at, now))
     for anchor in missed[:MAX_ANCHOR_REASONS]:
         share = round(anchor.hit_rate * 100)
         if anchor.device_id == ANY_INTERIOR:
@@ -377,33 +524,48 @@ def assess(events, baseline, roster, now, last_contact=None):
     if state == NORMAL:
         headline = "All normal. Last movement in the %s %s ago." % (room, human_duration(silence))
     elif state == QUIET:
-        headline = "Quieter than usual. No movement for %s, against a usual %s at this hour." % (
-            human_duration(silence), human_duration(threshold))
+        headline = ("Quieter than usual. Nothing has moved for %s, where a quiet spell "
+                    "beginning at that hour normally ends within %s."
+                    % (human_duration(silence), human_duration(threshold)))
     else:
-        headline = "No movement since %s, now %s, where %s is usual for a %s at that hour." % (
-            _clock(began), human_duration(silence), human_duration(threshold), began_daytype)
+        headline = ("Nothing has moved since %s, which is %s. A quiet spell beginning at "
+                    "that hour normally ends within %s."
+                    % (when_text(began, now), human_duration(silence), human_duration(threshold)))
         if missed:
             first = missed[0]
             label = "up and about" if first.device_id == ANY_INTERIOR else "in the %s" % roster.name(first.device_id)
             headline += " She is normally %s by %s." % (label, first.clock())
 
-    return Assessment(
+    return _maybe_settle(Assessment(
         at=now, state=state, headline=headline, reasons=reasons,
         silence_seconds=silence, silence_began=began,
         threshold_seconds=threshold, ratio=ratio,
         last_device=last.device_id, last_device_name=room,
         missed_anchors=missed, devices_down=list(down),
-        capped_by_outage=capped,
-    )
+        capped_by_outage=capped, company_at=company_at,
+        unanswered_ding_at=ding_at,
+    ), answered)
 
 
-def walk(events, baseline, roster, start, end, step_minutes=15):
+def _maybe_settle(reading, answered):
+    """Apply whatever a caregiver said about this stretch, if they said anything."""
+    if answered is None or not reading.needs_attention or reading.silence_began is None:
+        return reading
+    look = answered if callable(answered) else answered.get
+    answer = look(reading.silence_began.isoformat())
+    return _settle(reading, answer) if answer else reading
+
+
+def walk(events, baseline, roster, start, end, step_minutes=15,
+         last_contact=None, answered=None):
     """Assess repeatedly across a span, which is what a running service does."""
+    events = events if isinstance(events, Timeline) else Timeline(events, roster)
     readings = []
     moment = start
     step = timedelta(minutes=step_minutes)
     while moment <= end:
-        readings.append(assess(events, baseline, roster, moment))
+        readings.append(assess(events, baseline, roster, moment,
+                               last_contact=last_contact, answered=answered))
         moment += step
     return readings
 

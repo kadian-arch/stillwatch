@@ -104,6 +104,7 @@ class Anchor:
 @dataclass
 class Baseline:
     days_observed: dict = field(default_factory=dict)
+    passages: list = field(default_factory=list)
     excluded_absences: int = 0
     activity: dict = field(default_factory=dict)
     quiet: dict = field(default_factory=dict)
@@ -157,13 +158,14 @@ class Baseline:
         if seconds is None:
             return "no baseline yet for %s at %02d:00" % (daytype, hour)
         cell = self.quiet_cell(daytype, hour)
-        return "a silence beginning at %02d:00 on a %s normally runs no longer than %s (%d days, %s)" % (
-            hour,
-            daytype,
-            human_duration(seconds),
-            cell["n"],
-            cell["basis"],
-        )
+        return ("a quiet spell beginning around %02d:00 on a %s normally ends within"
+                " %s, measured from %d of her own past spells %s" % (
+                    hour,
+                    daytype,
+                    human_duration(seconds),
+                    cell["n"],
+                    BASIS_WORDS.get(cell["basis"], cell["basis"]),
+                ))
 
     def to_dict(self):
         payload = asdict(self)
@@ -193,6 +195,16 @@ class Baseline:
     def load(cls, path):
         with open(path, "r", encoding="utf-8") as handle:
             return cls.from_dict(json.load(handle))
+
+
+# How the pool of past spells was widened, said in words rather than in the
+# shorthand the learner uses internally.
+BASIS_WORDS = {
+    "this hour": "at this time of day",
+    "this hour, either kind of day": "at this time of day, weekdays and weekends together",
+    "a few hours either side": "from a few hours either side",
+    "whole history": "from across her whole history",
+}
 
 
 def human_duration(seconds):
@@ -404,6 +416,49 @@ def _learn_anchors(events, roster, days, spans):
     return anchors
 
 
+# Two cameras seeing movement this close together cannot both have been
+# triggered by one person walking, unless one of them is watching the way
+# between the two rooms.
+TOGETHER_SECONDS = 5
+
+# A camera that fires alongside this many different others is a passageway.
+# One person stepping out of a bedroom trips the landing camera at the same
+# moment, and in 28 days of a household living alone every single pair of
+# rooms that moved at once had the landing on one side of it.
+PASSAGE_PARTNERS = 2
+
+
+def _learn_passages(events, roster):
+    """Cameras that watch the way between rooms rather than a room.
+
+    Nothing in the Ring API says where a camera is pointed, and a household
+    naming one "Landing" is a convention, not a fact. This is the same trick
+    the doorbell uses: the behaviour gives it away. Knowing which cameras are
+    passageways is what makes two rooms moving at once mean two people instead
+    of one person walking through a door.
+    """
+    # Sorted on the way in. The walk below stops at the first partner that is
+    # too far away in time, which is only correct in order, and events do not
+    # always arrive in it.
+    inside = sorted(interior_events(events, roster), key=lambda event: event.at)
+    partners = {}
+    # Walked by index rather than by slicing. A slice copies the whole tail of
+    # the list on every step, which turns a cheap scan into seconds of work
+    # once a household has a few weeks behind it.
+    for index in range(len(inside)):
+        event = inside[index]
+        for ahead in range(index + 1, len(inside)):
+            other = inside[ahead]
+            if (other.at - event.at).total_seconds() > TOGETHER_SECONDS:
+                break
+            if other.device_id == event.device_id:
+                continue
+            partners.setdefault(event.device_id, set()).add(other.device_id)
+            partners.setdefault(other.device_id, set()).add(event.device_id)
+    return sorted(device_id for device_id, seen in partners.items()
+                  if len(seen) >= PASSAGE_PARTNERS)
+
+
 def learn(events, roster, until=None, departure_window=None, confirmed=()):
     """Build a baseline from history. Events at or after until are ignored.
 
@@ -433,6 +488,7 @@ def learn(events, roster, until=None, departure_window=None, confirmed=()):
 
     return Baseline(
         days_observed=counts,
+        passages=_learn_passages(events, roster),
         excluded_absences=excluded,
         activity=_learn_activity(events, roster, days, spans),
         quiet=_learn_quiet(home_gaps),

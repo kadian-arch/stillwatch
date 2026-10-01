@@ -206,6 +206,107 @@ def cmd_backfill(args):
     return 0 if report.ok else 1
 
 
+# How stale each thing is allowed to get before somebody is told. The judge
+# runs every five minutes, so twenty is four missed turns and not a blip.
+STALE_TICK_MINUTES = 20
+STALE_DELIVERY_MINUTES = 60
+
+
+def cmd_watchdog(args):
+    """Check that the thing doing the watching is itself still alive.
+
+    Everything else in Stillwatch reports on the household. Nothing reported on
+    Stillwatch, and the failure that costs the most is the quietest one: a
+    judge that has stopped running, or a feed that has stopped arriving, both
+    look exactly like a house where nothing is wrong.
+
+    Meant for a scheduler, every ten or fifteen minutes. It says one thing at
+    most per day per fault, because an alarm that repeats is an alarm that gets
+    filtered, which is how this went wrong the first time.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from .clock import local_date
+    from .notify import Notice, channels_from_env, deliver
+    from .store import EventStore
+
+    store = EventStore(args.db)
+    now = datetime.now(timezone.utc)
+
+    def stale(moment, minutes):
+        return moment is None or (now - moment) > timedelta(minutes=minutes)
+
+    watched = store.load_state("watcher") or {}
+    ticked = None
+    if watched.get("at"):
+        try:
+            ticked = datetime.fromisoformat(watched["at"])
+        except ValueError:
+            ticked = None
+    delivered = store.last_delivery_at()
+
+    faults = []
+    if stale(ticked, args.tick_minutes):
+        faults.append((
+            "judge",
+            "Stillwatch has stopped judging this household.",
+            "The part that decides whether anyone needs checking on last ran %s."
+            % (ticked.isoformat(timespec="minutes") if ticked else "never"),
+        ))
+    if stale(delivered, args.delivery_minutes):
+        faults.append((
+            "feed",
+            "Nothing is reaching Stillwatch from the cameras.",
+            "The last delivery of any kind was %s."
+            % (delivered.isoformat(timespec="minutes") if delivered else "never"),
+        ))
+
+    if not faults:
+        print("watchdog ok")
+        print("  last judgement %s" % (ticked.isoformat(timespec="minutes") if ticked else "never"))
+        print("  last delivery  %s" % (delivered.isoformat(timespec="minutes")
+                                       if delivered else "never"))
+        store.close()
+        return 0
+
+    told = store.load_state("watchdog") or {}
+    today = local_date(now).isoformat()
+    channels = channels_from_env()
+    sent = 0
+
+    for name, headline, detail in faults:
+        print("FAULT: %s" % headline)
+        print("  %s" % detail)
+        if told.get(name) == today and not args.force:
+            print("  already said so today, staying quiet")
+            continue
+        notice = Notice(
+            at=now,
+            kind="watchdog",
+            urgency="urgent",
+            subject="Stillwatch: %s" % headline.rstrip("."),
+            body="\n".join([
+                headline,
+                "",
+                "- " + detail,
+                "- Nothing can be said about the household until this is fixed.",
+                "- This is a fault in the service, not a sign that anyone is unwell.",
+            ]),
+            state="UNKNOWN",
+        )
+        deliver(channels, notice)
+        if notice.delivered:
+            told[name] = today
+            sent += 1
+            print("  told %s" % ", ".join(notice.delivered_to))
+        else:
+            print("  could not tell anyone: %s" % "; ".join(notice.errors) or "no channel")
+
+    store.save_state("watchdog", told)
+    store.close()
+    return 1 if sent else 0
+
+
 def cmd_notify_test(args):
     """Send one message through whatever channels the environment names."""
     from datetime import datetime, timezone
@@ -358,16 +459,23 @@ def cmd_serve(args):
         print("Stillwatch on http://%s:%d, replay" % (args.host, args.port))
         print("  %d scenarios from %s" % (len(source.scenarios()), args.data))
 
-    watcher = None
-    if args.live and args.notify:
+    # Built whether or not the timer is running. Judging on a timer is a
+    # choice; telling the rest of the family that somebody has been round is
+    # not, because the alternative is three people making the same journey.
+    channels = []
+    if args.live:
         from .notify import channels_from_env
-        from .watch import LiveWatcher
 
         channels = channels_from_env()
+
+    watcher = None
+    if args.live and args.notify:
+        from .watch import LiveWatcher
+
         watcher = LiveWatcher(store, args.person, channels).start()
         print("  watching for silence, telling: %s" % ", ".join(watcher.channels))
 
-    create_app(source, store=store, webhook_secret=secret).run(
+    create_app(source, store=store, webhook_secret=secret, channels=channels).run(
         host=args.host, port=args.port, debug=False)
     return 0
 
@@ -416,6 +524,16 @@ def build_parser():
         "notify-test", help="Send one test message through the configured channels.")
     tester.add_argument("--person", default="this household")
     tester.set_defaults(handler=cmd_notify_test)
+
+    guard = commands.add_parser(
+        "watchdog", help="Check that the watcher and the feed are both still alive.")
+    guard.add_argument("--db", default=os.environ.get("DATABASE_URL")
+                       or os.environ.get("STILLWATCH_DB", "events.db"))
+    guard.add_argument("--tick-minutes", type=int, default=STALE_TICK_MINUTES)
+    guard.add_argument("--delivery-minutes", type=int, default=STALE_DELIVERY_MINUTES)
+    guard.add_argument("--force", action="store_true",
+                       help="Send even if the same fault was reported today.")
+    guard.set_defaults(handler=cmd_watchdog)
 
     prober = commands.add_parser(
         "probe", help="Call the real Ring API with a Playground token.")

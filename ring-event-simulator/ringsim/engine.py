@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import random
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -79,6 +80,20 @@ def clip(blocks, start, end):
         if block.end > end:
             kept.append(Block(end, block.end, block.zone))
     return [block for block in kept if block.seconds >= MIN_BLOCK_SECONDS]
+
+
+def event_id(when, device_id, kind):
+    """An id derived from the event itself, so the same event is always the
+    same event.
+
+    This used to be a counter that started at one on every call. Two runs that
+    overlapped in time produced different events sharing the ids evt_000001
+    upwards, the store refused every one of them as a redelivery, and a feed
+    that was posting several hundred events an hour wrote nothing at all. The
+    dashboard showed a house where nobody had moved for days.
+    """
+    seed = "%s|%s|%s" % (when.isoformat(), device_id, kind)
+    return "evt_" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:20]
 
 
 class Simulator:
@@ -234,10 +249,10 @@ class Simulator:
         lookup = by_id(self.devices)
         ordered = sorted(raw, key=lambda item: (item[0], item[1]))
         events = []
-        for index, (when, device_id, kind) in enumerate(ordered, 1):
+        for when, device_id, kind in ordered:
             events.append(
                 Event(
-                    event_id="evt_%06d" % index,
+                    event_id=event_id(when, device_id, kind),
                     device_id=device_id,
                     device_name=lookup[device_id].name,
                     kind=kind,

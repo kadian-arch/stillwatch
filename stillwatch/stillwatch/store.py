@@ -40,6 +40,7 @@ STATEMENTS = (
         episode TEXT PRIMARY KEY,
         outcome TEXT NOT NULL,
         note TEXT,
+        answered_by TEXT,
         daytype TEXT,
         hour INTEGER,
         seconds REAL,
@@ -56,6 +57,13 @@ STATEMENTS = (
         expires_at TEXT,
         linked_at  TEXT
     )""",
+)
+
+# Run after the tables, each on its own, and each allowed to fail. A column
+# that is already there is the ordinary case, not a problem, and there is no
+# form of ADD COLUMN IF NOT EXISTS that both databases understand.
+MIGRATIONS = (
+    "ALTER TABLE answers ADD COLUMN answered_by TEXT",
 )
 
 POSTGRES_PREFIXES = ("postgres://", "postgresql://")
@@ -103,6 +111,14 @@ class EventStore:
             for statement in STATEMENTS:
                 self._execute(statement)
             self._db.commit()
+            for statement in MIGRATIONS:
+                try:
+                    self._execute(statement).close()
+                    self._db.commit()
+                except Exception:
+                    # Postgres abandons the whole transaction on a failed
+                    # statement, so the rollback is what lets the next one run.
+                    self._db.rollback()
 
     @property
     def kind(self):
@@ -210,7 +226,7 @@ class EventStore:
         latest = rows[0]["latest"] if rows else None
         return parse_timestamp(latest) if latest else None
 
-    def save_answer(self, episode, outcome, at, note=None,
+    def save_answer(self, episode, outcome, at, note=None, by=None,
                     daytype=None, hour=None, seconds=None):
         """What a caregiver said when they looked.
 
@@ -221,11 +237,13 @@ class EventStore:
         """
         with self._lock:
             self._execute(
-                "INSERT INTO answers (episode, outcome, note, daytype, hour, seconds, at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO answers"
+                " (episode, outcome, note, answered_by, daytype, hour, seconds, at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT (episode) DO UPDATE SET outcome = excluded.outcome,"
-                " note = excluded.note, at = excluded.at",
-                (episode, outcome, note, daytype, hour, seconds, at.isoformat()),
+                " note = excluded.note, answered_by = excluded.answered_by,"
+                " at = excluded.at",
+                (episode, outcome, note, by, daytype, hour, seconds, at.isoformat()),
             ).close()
             self._db.commit()
 
@@ -234,14 +252,16 @@ class EventStore:
             return None
         with self._lock:
             rows = self._fetchall(
-                "SELECT episode, outcome, note, at FROM answers WHERE episode = ?",
+                "SELECT episode, outcome, note, answered_by AS by, at"
+                " FROM answers WHERE episode = ?",
                 (episode,))
         return rows[0] if rows else None
 
     def answers(self, limit=50):
         with self._lock:
             return self._fetchall(
-                "SELECT episode, outcome, note, at FROM answers ORDER BY at DESC")[:limit]
+                "SELECT episode, outcome, note, answered_by AS by, at"
+                " FROM answers ORDER BY at DESC")[:limit]
 
     def confirmed_quiet(self):
         """Stretches the household has said are normal for them.

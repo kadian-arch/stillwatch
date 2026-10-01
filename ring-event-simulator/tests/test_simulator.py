@@ -71,7 +71,18 @@ def test_structure():
 
     ids = [e.event_id for e in events]
     check("event ids are unique", len(set(ids)) == len(ids))
-    check("event ids are ordered", ids == sorted(ids))
+
+    # Ids used to be a counter that restarted at one on every call, so two
+    # runs covering different stretches of time handed out the same ids for
+    # different events, and a store that refuses duplicates threw the second
+    # run away. They are derived from the event itself now.
+    again, _ = run("normal")
+    check("the same event always gets the same id",
+          [e.event_id for e in again] == ids)
+
+    other = Simulator(seed=SEED).generate(START + timedelta(days=1), 2)
+    check("a different stretch of time reuses no id",
+          not (set(ids) & {e.event_id for e in other}))
 
     kinds = {e.kind for e in events}
     check("only known event kinds", kinds <= {MOTION, DING, OFFLINE, ONLINE}, str(kinds))

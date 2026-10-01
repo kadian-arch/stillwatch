@@ -43,6 +43,7 @@
 
     <div class="top-right">
       <span class="live" id="livePill" hidden><i></i>Live</span>
+      <button type="button" class="who" id="who" hidden></button>
       <button type="button" class="theme" id="theme" aria-label="Switch between light and dark">
         <svg viewBox="0 0 20 20" aria-hidden="true">
           <circle class="sun" cx="10" cy="10" r="4"/>
@@ -65,6 +66,33 @@
     </label>
   </div>
 </header>
+
+<div class="aside">
+<p class="banner open-warning" id="openNotice" hidden></p>
+
+<section class="gate" id="gate" hidden>
+  <div class="gate-say">
+    <h2>This household is private</h2>
+    <p>Sign in to see today and to answer for it. The recorded days are open to
+      anyone, and nothing in them came from a real home.</p>
+  </div>
+  <form class="gate-form" id="gateForm" autocomplete="on">
+    <label class="gate-field">
+      <span>Your name</span>
+      <input type="text" id="gateName" name="name" autocomplete="name"
+             placeholder="Who are you?" required>
+    </label>
+    <label class="gate-field">
+      <span>Passcode</span>
+      <input type="password" id="gatePass" name="passcode"
+             autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="cta" id="gateGo">Sign in</button>
+  </form>
+  <p class="gate-note" id="gateNote">Your name is kept with anything you answer, so
+    the rest of the family can see who has already been.</p>
+</section>
+</div>
 
 <main class="wrap" id="app" aria-busy="true">
 
@@ -170,6 +198,7 @@
       <li><i data-state="ALERT"></i>Alert</li>
       <li><i data-state="AWAY"></i>Out</li>
       <li><i data-state="UNKNOWN"></i>Cannot tell</li>
+      <li><i data-state="SETTLED"></i>Checked</li>
       <li><i class="key-door"></i>Door</li>
       <li><i class="key-off"></i>Camera offline</li>
     </ul>
@@ -183,8 +212,8 @@
     <div class="bars-axis" aria-hidden="true">
       <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
     </div>
-    <p class="note">The longest stillness in an ordinary day, by the hour it begins. Hours
-      at night, minutes at midday. Learned from her own weeks, never typed in.</p>
+    <p class="note">The longest stillness in an ordinary day, by the hour it begins.
+      Hours at night, minutes at midday, learned from her own weeks.</p>
   </section>
 
   <section class="card habits" aria-labelledby="habits-h">
@@ -204,6 +233,10 @@
       Cameras inside show that somebody is moving about. Stillwatch reads only whether
       movement was seen and at what time. It does not request, receive or store video,
       and it cannot see inside the home.</p>
+    <p class="note caution">Which also means it watches the house, not the person. A
+      camera cannot tell who walked past it, so a home with two people in it is outside
+      what this can judge. Where two rooms move at once, Stillwatch says so on the day
+      rather than guessing.</p>
   </section>
 
 </main>

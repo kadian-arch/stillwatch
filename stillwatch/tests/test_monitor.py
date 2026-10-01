@@ -29,11 +29,13 @@ from stillwatch.monitor import (
     CONCERN,
     NORMAL,
     QUIET,
+    SETTLED,
     UNKNOWN,
     assess,
     changes,
     peak,
     walk,
+    when_text,
 )
 from stillwatch.rhythm import Baseline, learn
 
@@ -318,6 +320,110 @@ def test_every_reading_carries_its_reasoning():
           json.loads(json.dumps([r.to_dict() for r in readings[:5]])))
 
 
+def test_an_answer_settles_it():
+    section("somebody looks, and the question stops being asked")
+    stream, baseline, target, _ = prepared("fall")
+    readings = walk(stream, baseline, roster(), at(target, 0), at(target, 23, 55), 5)
+    worst = peak(readings)
+    check("the fall still reaches an alert", worst.state == ALERT)
+
+    episode = worst.silence_began.isoformat()
+    answered = {episode: {"episode": episode, "outcome": "fine", "by": "Aline",
+                          "at": at(target, 14, 30).isoformat()}}
+
+    after = assess(stream, baseline, roster(), worst.at, answered=answered)
+    check("the state becomes settled", after.state == SETTLED, after.state)
+    check("it says who looked", "Aline" in after.headline, after.headline)
+    check("it stops needing attention", not after.needs_attention)
+    check("the reasoning is still there, not thrown away",
+          any("Last movement was in the" in reason for reason in after.reasons),
+          str(after.reasons))
+    check("and the engine still knows what it found",
+          after.silence_seconds == worst.silence_seconds)
+
+    other = assess(stream, baseline, roster(), worst.at,
+                   answered={"2020-01-01T00:00:00+00:00": {"outcome": "fine"}})
+    check("an answer about a different stretch changes nothing",
+          other.state == ALERT, other.state)
+
+    check("a quiet house with no answer is untouched",
+          assess(stream, baseline, roster(), worst.at).state == ALERT)
+
+
+def test_two_people_in_the_house_is_said_out_loud():
+    section("two rooms at once is two people, and it says so")
+    stream, baseline, target, _ = prepared("fall")
+    worst = peak(walk(stream, baseline, roster(), at(target, 0), at(target, 23, 55), 5))
+
+    plain = assess(stream, baseline, roster(), worst.at)
+
+    # The landing camera sees her every time she steps out of a bedroom, so
+    # the landing and the bedroom move together constantly for one person
+    # living alone. The baseline works out which cameras do that before any of
+    # this is allowed to mean a second person.
+    check("the passageway camera is learned, not named",
+          baseline.passages == ["landing"], str(baseline.passages))
+    check("nothing is claimed when she was alone in 28 days of history",
+          plain.company_at is None, str(plain.company_at))
+
+    # Somebody else moving in a different room, seconds after her last
+    # movement. Nobody is in two rooms at once, and neither room is the way
+    # between them, so this can only be a second person.
+    began = plain.silence_began
+    hers = [event.device_id for event in stream if event.at == began]
+    elsewhere = [device_id for device_id in roster().interior_ids()
+                 if device_id not in hers + baseline.passages][0]
+    visitor = normalise({
+        "event_id": "visitor-1", "device_id": elsewhere, "kind": "motion",
+        "created_at": (began - timedelta(seconds=4)).isoformat(),
+    })
+    check("the visitor is in a different room from her last movement",
+          elsewhere not in hers, "%s vs %s" % (elsewhere, hers))
+
+    shared = assess(stream + [visitor], baseline, roster(), worst.at)
+    check("company is spotted", shared.company_at is not None)
+    check("and it is on the page, not buried",
+          any("somebody else was in the house" in reason for reason in shared.reasons),
+          str(shared.reasons))
+    check("it does not quietly cancel the alarm", shared.state == ALERT, shared.state)
+
+
+def test_an_unanswered_doorbell_is_worth_saying():
+    section("the bell rang and nothing moved")
+    stream, baseline, target, _ = prepared("fall")
+    worst = peak(walk(stream, baseline, roster(), at(target, 0), at(target, 23, 55), 5))
+    began = worst.silence_began
+
+    caller = normalise({
+        "event_id": "caller-1", "device_id": "front_door", "kind": "ding",
+        "created_at": (began + timedelta(hours=1)).isoformat(),
+    })
+    reading = assess(stream + [caller], baseline, roster(), worst.at)
+    check("the call is noticed", reading.unanswered_ding_at is not None)
+    check("and explained", any("rang the doorbell" in reason for reason in reading.reasons),
+          str(reading.reasons))
+
+
+def test_a_time_says_which_day_it_belongs_to():
+    section("yesterday is not just a clock reading")
+    now = at(date(2026, 10, 1), 10, 30)
+    check("today is a plain time", when_text(at(date(2026, 10, 1), 7, 5), now) == "07:05")
+    check("yesterday says so",
+          when_text(at(date(2026, 9, 30), 10, 32), now) == "10:32 yesterday",
+          when_text(at(date(2026, 9, 30), 10, 32), now))
+    check("earlier in the week names the day",
+          when_text(at(date(2026, 9, 28), 9, 0), now) == "09:00 on Monday",
+          when_text(at(date(2026, 9, 28), 9, 0), now))
+
+    stream, baseline, target, _ = prepared("fall")
+    worst = peak(walk(stream, baseline, roster(), at(target, 0), at(target, 23, 55), 5))
+    tomorrow = assess(stream, baseline, roster(), at(target + timedelta(days=1), 10))
+    check("a silence that ran overnight is not reported as this morning",
+          "yesterday" in tomorrow.headline, tomorrow.headline)
+    check("and it never reads as a bare clock time against a different day",
+          worst.headline != tomorrow.headline)
+
+
 def test_ladder_helpers():
     section("ladder helpers")
     stream, baseline, target, _ = prepared("fall")
@@ -350,6 +456,10 @@ def main():
         test_a_blind_house_says_so,
         test_no_history_says_so,
         test_every_reading_carries_its_reasoning,
+        test_an_answer_settles_it,
+        test_two_people_in_the_house_is_said_out_loud,
+        test_an_unanswered_doorbell_is_worth_saying,
+        test_a_time_says_which_day_it_belongs_to,
         test_ladder_helpers,
     ):
         test()

@@ -102,13 +102,76 @@ afterwards.
 
 ## Protecting the dashboard
 
-The dashboard shows when a person moves around their home. It should not be
-open to the internet.
+The dashboard shows when a person is at home, when they sleep and when the
+house is empty, and its answer buttons let whoever presses one silence a real
+alarm. It should not be open to the internet.
 
-Put an authenticating proxy in front of everything except `/ring/`, which must
-stay reachable for Ring's servers. Cloudflare Access does this with two
-applications: one covering `*` that allows named email addresses, and one
+Set two things and it is not:
+
+```
+STILLWATCH_PASSCODE          something long that the family can read down a phone
+STILLWATCH_SESSION_SECRET    a long random string, used to sign session cookies
+```
+
+With a passcode set, the household and every answer need a sign in. Anybody
+holding the passcode signs in with their own name, and that name is stored
+with anything they answer and sent to everybody else, so the family can see
+who has already been round. Sessions last a fortnight and are a signed cookie,
+so a restart does not sign anyone out and there is no session table to leak.
+
+Leave the passcode out and the service runs open. It will say so in a panel at
+the top of its own page, which is the point: a lock nobody knows about is
+worse than no lock.
+
+The recorded demonstration days stay readable either way. Nothing in them came
+from a real home.
+
+If a proxy is wanted as well, put it in front of everything except `/ring/`,
+which must stay reachable for Ring's servers. Cloudflare Access does this with
+two applications: one covering `*` that allows named email addresses, and one
 covering `ring/*` set to bypass. The more specific path wins.
+
+## Keeping it honest while nobody is looking
+
+Two scheduled jobs, every ten or fifteen minutes.
+
+```bash
+python -m stillwatch watchdog
+```
+
+Says so if the part that judges the household has stopped running, or if
+nothing has arrived from the cameras for an hour. It reports each fault once a
+day rather than every time it runs. Without it, a service that has quietly
+died looks exactly like a house where nothing is wrong, which is the one
+failure this cannot afford.
+
+```bash
+python feed.py --catch-up
+```
+
+Only for a deployment with no real cameras behind it. It works out what the
+simulated household has done since the last event stored, posts it through the
+real signed webhook, and stops. Safe to run as often as you like: every event
+carries an id derived from itself, so anything already stored is refused.
+
+## Amazon services
+
+Both are optional, and both are read from the environment.
+
+```
+STILLWATCH_SNS_TOPIC_ARN     notifications through Amazon SNS
+AWS_REGION                   the region that topic and model live in
+STILLWATCH_BEDROCK_MODEL_ID  have the opening sentence of a message written
+```
+
+SNS is the better notification channel because a caregiver subscribes
+themselves to the topic, so Stillwatch never holds anybody's address or phone
+number. SMTP is the fallback, and it does hold them.
+
+Bedrock rewrites the first sentence of a message and nothing else. Every
+reason underneath it is the engine's own and is sent exactly as produced, so a
+model that is slow, unavailable or switched off costs a message its tone and
+none of its facts.
 
 ## Checking it works
 

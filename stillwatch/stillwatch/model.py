@@ -7,6 +7,7 @@ Ring API means changing normalise and load_roster, and nothing else.
 from __future__ import annotations
 
 import json
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from .clock import local, local_date, local_hour
 from datetime import datetime, timezone
@@ -124,6 +125,45 @@ def load_roster(path):
         )
         for entry in entries
     )
+
+
+class Timeline:
+    """Events arranged once, so repeated questions about them are cheap.
+
+    Judging one day draws nearly three hundred assessments, and each of them
+    used to sort the whole store, pick the interior events out of it and walk
+    every outage again. Weeks of history behind a single day made building
+    that day take half a minute, which is longer than a web request is allowed
+    to live.
+
+    Everything here is the part that does not depend on when the question is
+    being asked. Slicing by time is a binary search over the timestamps.
+    """
+
+    def __init__(self, events, roster):
+        self.roster = roster
+        self.events = sorted(events, key=lambda event: event.at)
+        self._stamps = [event.at for event in self.events]
+        self.interior = interior_events(self.events, roster)
+        self._interior_stamps = [event.at for event in self.interior]
+        # Spans are read as "was this device down at this moment", and a span
+        # that has not started yet never matches one, so they can be worked
+        # out across the whole stream rather than per moment.
+        self.spans = outage_spans(self.events)
+
+    def upto(self, moment):
+        return self.events[:bisect_right(self._stamps, moment)]
+
+    def interior_upto(self, moment):
+        return self.interior[:bisect_right(self._interior_stamps, moment)]
+
+    def interior_between(self, start, end):
+        low = bisect_left(self._interior_stamps, start)
+        return self.interior[low:bisect_right(self._interior_stamps, end)]
+
+    def between(self, start, end):
+        low = bisect_left(self._stamps, start)
+        return self.events[low:bisect_right(self._stamps, end)]
 
 
 def interior_events(events, roster):

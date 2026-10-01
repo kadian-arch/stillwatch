@@ -22,6 +22,7 @@
   --alert: #be123c;
   --away: #7c3aed;
   --unknown: #78716c;
+  --settled: #0891b2;
 
   --state: var(--normal);
 
@@ -66,6 +67,7 @@
     --alert: #e11d48;
     --away: #8b5cf6;
     --unknown: #78716c;
+    --settled: #0ea5c4;
 
     --shadow:
       0 1px 1px rgba(0, 0, 0, 0.4),
@@ -96,6 +98,7 @@
   --alert: #e11d48;
   --away: #8b5cf6;
   --unknown: #78716c;
+  --settled: #0ea5c4;
   --shadow:
     0 1px 1px rgba(0, 0, 0, 0.4),
     0 4px 12px -4px rgba(0, 0, 0, 0.5),
@@ -784,6 +787,7 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
 .seg[data-state="CONCERN"] { height: 74%; }
 .seg[data-state="ALERT"] { height: 100%; }
 .seg[data-state="UNKNOWN"] { height: 100%; }
+.seg[data-state="SETTLED"] { height: 52%; }
 
 /* The day draws itself once, left to right, so the shape of it registers
    before the colours do. Only on a new day, never on a live refresh. */
@@ -814,6 +818,7 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
 .seg[data-state="ALERT"] { --c: var(--alert); }
 .seg[data-state="AWAY"] { --c: var(--away); }
 .seg[data-state="UNKNOWN"] { --c: var(--unknown); }
+.seg[data-state="SETTLED"] { --c: var(--settled); }
 
 /* A tinted body with a saturated cap. A long stretch of alert is a large
    area, and a large area of saturated colour reads as a warning banner
@@ -973,6 +978,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.14); }
 .legend i[data-state="CONCERN"] { background: var(--concern); }
 .legend i[data-state="ALERT"] { background: var(--alert); }
 .legend i[data-state="AWAY"] { background: var(--away); }
+.legend i[data-state="SETTLED"] { background: var(--settled); }
 .legend i[data-state="UNKNOWN"] {
   background: repeating-linear-gradient(135deg, var(--unknown) 0 3px, transparent 3px 6px);
 }
@@ -1155,4 +1161,125 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.14); }
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+
+/* ---------- the gate ---------- */
+
+/* Outside the page grid on purpose. Both of these are hidden most of the time,
+   and a hidden row in a grid still leaves its gap behind. */
+.aside {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.aside > * + * { margin-top: var(--gap); }
+.aside:not(:has(> *:not([hidden]))) { display: none; }
+.aside > *:first-child:not([hidden]) { margin-top: var(--gap); }
+
+.banner.open-warning {
+  background: color-mix(in srgb, var(--concern) 11%, var(--surface));
+  border-color: color-mix(in srgb, var(--concern) 30%, transparent);
+}
+
+.gate {
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow), var(--lit);
+  padding: var(--pad);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 880px) {
+  .gate {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    align-items: end;
+  }
+  .gate-note { grid-column: 1 / -1; }
+}
+
+.gate-say h2 {
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.gate-say p {
+  margin-top: 7px;
+  color: var(--ink-2);
+  font-size: 13.6px;
+  max-width: 46ch;
+}
+
+.gate-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+.gate-field {
+  display: grid;
+  gap: 5px;
+  flex: 1 1 170px;
+  min-width: 0;
+}
+.gate-field > span {
+  font-size: 11.5px;
+  font-weight: 550;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.gate-field input {
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface-2, transparent);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  padding: 10px 13px;
+  min-width: 0;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.gate-field input:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--ink) 45%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 11%, transparent);
+}
+.gate-form .cta { flex: 0 0 auto; }
+.gate-form .cta[disabled] { opacity: 0.55; cursor: progress; }
+
+.gate-note {
+  color: var(--muted);
+  font-size: 12.6px;
+  max-width: 62ch;
+}
+
+/* Who is signed in, and the way out again. */
+.who {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 4px 12px;
+  max-width: 13ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.who:hover { background: color-mix(in srgb, var(--ink) 11%, transparent); color: var(--ink); }
+
+/* The one thing a motion sensor can never answer, said plainly rather than
+   left for somebody else to point out. */
+.note.caution {
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
 }

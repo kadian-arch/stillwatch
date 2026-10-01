@@ -236,3 +236,101 @@ as a warning banner rather than as a chart, so the body of each band is a
 twenty percent tint with the full colour kept for the three pixel cap along
 its top edge.
 
+
+---
+
+## 23. An answer ends a stretch of worry, and movement is no longer the only thing that can
+
+Until a caregiver could say something, the only way out of an alert was the
+person moving again. A daughter who had already phoned and found her mother
+perfectly well had no way to tell Stillwatch so, and it chased her for two
+days. More than eighty messages about a single stretch of quiet, which is not
+urgency, it is noise.
+
+Four answers now end it: all is well, she was out, this is normal now, dealt
+with. The reading underneath does not change and is still on the page. What
+changes is the question being asked.
+
+*Consequence:* "this is normal now" is also training data. The stretch is
+recorded as a confirmed quiet spell for that hour and day type and folded into
+the baseline, so somebody whose sleeping has changed stops being asked about
+in the second week rather than the tenth.
+
+---
+
+## 24. Events are named by what they are, not by the order they were made in
+
+Simulated events carried an id that was a counter, starting at one on every
+run. Two runs covering different stretches of time therefore handed out the
+same ids to different events, the store refused every one of them as a
+redelivery, and a feed posting hundreds of events an hour wrote nothing at
+all.
+
+Nothing failed. There was no error to find: the poster reported success, the
+service reported a healthy webhook, and the dashboard showed a house where
+nobody had moved for four days. Exactly the picture this product exists to
+raise the alarm about, produced by its own plumbing.
+
+Ids are now a hash of the moment, the camera and the kind. The same event is
+always the same event, and two different events are never the same one.
+
+*Consequence:* ids no longer sort into time order. The test that asserted they
+did was asserting an accident of the old scheme, and now asserts what actually
+matters: that a second run reuses the ids of the first, and that an
+overlapping window reuses none of them.
+
+---
+
+## 25. A passcode is optional, and running without one is announced
+
+A dashboard that shows when a house is empty is a burglary planner, and the
+answer buttons let anybody silence a real alarm. Both now sit behind a
+household passcode.
+
+It is deliberately possible to run with no passcode at all, because a product
+nobody can get into is not demonstrable. What is not possible is doing that
+quietly: with no passcode set, the page itself carries a panel saying anyone
+with the address can read this home and answer on the family's behalf.
+
+*Consequence:* the recorded days stay open whatever the setting, so somebody
+can always see the engine work without being let into a household.
+
+---
+
+## 26. Which cameras watch the way between rooms is learned, not named
+
+Two rooms moving at the same second is two people, because nobody is in two
+rooms at once. That is the only question about company a motion sensor can
+answer on its own, and it matters, because this watches a house and not a
+person.
+
+Measured against twenty-eight days of a household living alone, the rule fired
+thirty-one times. Every single one involved the landing. A camera on a landing
+sees you as you step out of a bedroom, so the landing and the bedroom move
+together every time one person walks through a door.
+
+So the baseline learns which cameras do that: any camera that fires within
+five seconds of two or more different others is watching a passageway, and
+pairs involving it are not evidence of anything. With the landing excluded,
+the same twenty-eight days produce no claim of company at all.
+
+*Consequence:* the same trick as the doorbell. Ring's API carries no camera
+type and a household naming one "Landing" is a convention rather than a fact,
+so the behaviour is read instead of the label.
+
+---
+
+## 27. Something watches the watcher
+
+Every other part of Stillwatch reports on the household and nothing reported on
+Stillwatch. The failure that costs the most is the quietest one: a judge that
+has stopped running and a house where nothing is wrong look identical from
+outside, and the only sign is an absence.
+
+The watcher now writes the time of each judgement to the store, and
+`stillwatch watchdog` reads that and the time of the last delivery and says so
+if either has gone stale. It runs on a schedule, beside the feed.
+
+*Consequence:* it says each fault once a day. The lesson of the eighty messages
+applies to the watchdog more than to anything else, because an alarm about the
+plumbing is the first one a reader learns to ignore.

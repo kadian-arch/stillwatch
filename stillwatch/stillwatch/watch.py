@@ -75,11 +75,21 @@ class LiveWatcher:
         # Events are read fresh every tick. The baseline is not, because it
         # describes weeks and cannot have moved since the last one.
         reading = assess(self.store.events(), self._baseline, self._roster, now,
-                         last_contact=self.store.last_delivery_at())
+                         last_contact=self.store.last_delivery_at(),
+                         answered=self.store.answer_for)
         notices = self.notifier.observe(reading)
         # Written every time, not only when something was sent, so a restart
         # picks up exactly where this left off.
         self.store.save_state("notifier", state_of(self.notifier))
+        # And a note that this ran at all. A watcher that has quietly died
+        # looks exactly like a household where nothing is wrong, which is the
+        # one failure this product cannot afford. Something outside the process
+        # reads this and complains when it stops moving.
+        self.store.save_state("watcher", {
+            "at": now.isoformat(),
+            "state": reading.state,
+            "events": None,
+        })
         for notice in notices:
             if notice.delivered:
                 log.info("sent %s to %s", notice.kind, ", ".join(notice.delivered_to))

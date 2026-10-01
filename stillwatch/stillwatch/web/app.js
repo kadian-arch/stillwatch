@@ -26,6 +26,15 @@
     expected: "You said this is normal for her now. It has been added to what Stillwatch expects.",
     helped: "You said it was dealt with."
   };
+  // The same four answers in the third person, for everybody who did not
+  // press the button themselves.
+  var SAID_BY = {
+    fine: "checked, and all was well.",
+    away: "said she was out, not still.",
+    expected: "said this is normal for her now, and Stillwatch has taken it on.",
+    helped: "said it was dealt with."
+  };
+
   var THEME_KEY = "stillwatch.theme";
 
   var WORDS = {
@@ -34,7 +43,8 @@
     CONCERN: "Concern",
     ALERT: "Needs checking",
     AWAY: "Out",
-    UNKNOWN: "Cannot tell"
+    UNKNOWN: "Cannot tell",
+    SETTLED: "Checked"
   };
 
   var TINT = {
@@ -43,13 +53,15 @@
     CONCERN: "--concern",
     ALERT: "--alert",
     AWAY: "--away",
-    UNKNOWN: "--unknown"
+    UNKNOWN: "--unknown",
+    SETTLED: "--settled"
   };
 
   var UNKNOWN_WHY = {
     blind: "Every camera that matters is offline, so there is nothing to judge.",
     no_history: "There is not enough history yet to know what normal looks like.",
-    no_baseline: "No rhythm has been learned for this hour yet."
+    no_baseline: "No rhythm has been learned for this hour yet.",
+    no_contact: "Nothing has reached Stillwatch from the cameras, so there is nothing to read."
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -57,6 +69,9 @@
   var ui = {
     app: $("app"), empty: $("empty"), home: $("home"), theme: $("theme"),
     livePill: $("livePill"), dayField: $("dayField"), scenario: $("scenario"),
+    who: $("who"), openNotice: $("openNotice"), gate: $("gate"), gateForm: $("gateForm"),
+    gateName: $("gateName"), gatePass: $("gatePass"), gateGo: $("gateGo"),
+    gateNote: $("gateNote"),
     onField: $("onField"), onDate: $("onDate"),
     standby: $("standby"), facts: $("facts"), seeDemo: $("seeDemo"), banner: $("banner"),
     hero: $("hero"), stateWord: $("stateWord"), heroClock: $("heroClock"),
@@ -80,6 +95,7 @@
   var refresher = null;
   var following = true;
   var viewing = null;
+  var session = { locked: false, name: null };
 
   /* ---------- small helpers ---------- */
 
@@ -98,8 +114,22 @@
     return Math.max(0, Math.min(100, (value / DAY) * 100));
   }
 
+  // A silence that began before midnight shows up as a negative minute of
+  // this day. "00:00" for something that happened at half past ten yesterday
+  // morning is not a rounding problem, it is the wrong answer.
+  function whenOf(mins) {
+    if (mins === null || mins === undefined) { return "none today"; }
+    if (mins >= 0) { return clockOf(mins); }
+    var back = Math.ceil(-mins / DAY);
+    var into = mins + back * DAY;
+    return clockOf(into) + (back === 1 ? " yesterday" : " " + back + " days ago");
+  }
+
   function clockOf(mins) {
-    var whole = Math.max(0, Math.min(DAY - 1, Math.round(mins)));
+    // Floored, not rounded. The engine truncates when it writes a time into a
+    // sentence, and a glance saying 08:54 beside a reason saying 08:53 reads
+    // as two different events.
+    var whole = Math.max(0, Math.min(DAY - 1, Math.floor(mins)));
     var hh = Math.floor(whole / 60);
     var mm = whole % 60;
     return (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm;
@@ -219,6 +249,68 @@
 
   /* ---------- loading ---------- */
 
+  function showGate(why) {
+    ui.gate.hidden = false;
+    if (why) { ui.gateNote.textContent = why; }
+  }
+
+  function paintWho() {
+    ui.openNotice.hidden = session.locked;
+    if (!session.locked) {
+      ui.openNotice.textContent = "";
+      ui.openNotice.appendChild(el("strong", null, "No passcode is set."));
+      ui.openNotice.appendChild(document.createTextNode(
+        " Anyone who knows this address can see when this home is empty and can"
+        + " answer on the family's behalf. Set STILLWATCH_PASSCODE before a real"
+        + " household is put behind it."));
+    }
+    ui.who.hidden = !(session.locked && session.name);
+    if (session.name) {
+      ui.who.textContent = session.name;
+      ui.who.title = "Signed in as " + session.name + ". Click to sign out.";
+    }
+    ui.gate.hidden = !(session.locked && !session.name);
+  }
+
+  function signIn(event) {
+    event.preventDefault();
+    var name = ui.gateName.value;
+    ui.gateGo.disabled = true;
+    ui.gateGo.textContent = "Signing in";
+
+    fetch("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, passcode: ui.gatePass.value })
+    }).then(function (reply) {
+      return reply.json().then(function (body) { return { ok: reply.ok, body: body }; });
+    }).then(function (result) {
+      ui.gateGo.disabled = false;
+      ui.gateGo.textContent = "Sign in";
+      if (!result.ok) {
+        ui.gateNote.textContent = result.body.error || "That did not work.";
+        ui.gatePass.value = "";
+        ui.gatePass.focus();
+        return;
+      }
+      // Start again from a clean page rather than booting a second time on
+      // top of the first. Booting twice filled the day picker with every day
+      // listed twice and left two refresh timers running.
+      ui.gatePass.value = "";
+      location.reload();
+    }).catch(function () {
+      ui.gateGo.disabled = false;
+      ui.gateGo.textContent = "Sign in";
+      ui.gateNote.textContent = "Could not reach Stillwatch. Try again.";
+    });
+  }
+
+  function signOut() {
+    fetch("/api/session", { method: "DELETE" }).then(function () {
+      location.reload();
+    });
+  }
+
   function fail(message) {
     ui.app.setAttribute("aria-busy", "false");
     ui.empty.hidden = false;
@@ -235,6 +327,10 @@
     ]).then(function (both) {
       var index = both[0];
       var health = both[1] || {};
+
+      session.locked = Boolean(health.locked);
+      session.name = health.name || null;
+      paintWho();
 
       ui.home.textContent = index.persona || "The household";
       entries = index.scenarios || [];
@@ -257,6 +353,13 @@
 
       var wanted = param("scenario");
       var chosen = entryFor(wanted) ? wanted : entries[0].key;
+
+      // Locked out and asking for the household gets you the recorded days
+      // instead, rather than an error page with nothing on it.
+      if (session.locked && !session.name) {
+        var open = entries.filter(function (entry) { return entry.demo; });
+        if (open.length) { chosen = open[0].key; }
+      }
       ui.scenario.value = chosen;
 
       // A home connected this morning has nothing to show. Say so properly
@@ -342,6 +445,13 @@
 
     fetch(query)
       .then(function (reply) {
+        if (reply.status === 401) {
+          session.locked = true;
+          session.name = null;
+          paintWho();
+          showGate("Sign in to see this household.");
+          throw new Error("locked");
+        }
         if (!reply.ok) { throw new Error("no day"); }
         return reply.json();
       })
@@ -353,7 +463,13 @@
         settle(quietly);
         sweep(quietly);
       })
-      .catch(function () { fail("Could not load that day."); });
+      .catch(function (error) {
+        if (String(error && error.message) === "locked") {
+          ui.app.setAttribute("aria-busy", "false");
+          return;
+        }
+        fail("Could not load that day.");
+      });
   }
 
   /* ---------- drawing the parts that do not move ---------- */
@@ -580,8 +696,8 @@
 
     ui.learnedFrom.textContent = observed
       ? "Built from " + observed + " days of her own routine. Time she spent out of the "
-        + "house is left out, so a trip to the shops cannot stretch what counts as a "
-        + "normal quiet spell."
+        + "house does not count towards it, so a long afternoon at the market never "
+        + "becomes what Stillwatch expects of a quiet morning."
       : "";
   }
 
@@ -635,7 +751,8 @@
 
   function paintAnswer(reading) {
     var episode = reading.silence_began;
-    var worrying = reading.state === "CONCERN" || reading.state === "ALERT";
+    var worrying = reading.state === "CONCERN" || reading.state === "ALERT"
+      || reading.state === "SETTLED";
     if (!episode || !worrying || !day.is_today) {
       ui.answer.hidden = true;
       return;
@@ -646,7 +763,14 @@
     ui.answerButtons.textContent = "";
 
     if (said) {
-      ui.answerAsk.textContent = SAID[said.outcome] || "You have answered this.";
+      ui.answerAsk.textContent = said.by
+        ? said.by + " " + (SAID_BY[said.outcome] || "answered this.")
+        : (SAID[said.outcome] || "You have answered this.");
+      return;
+    }
+
+    if (session.locked && !session.name) {
+      ui.answerAsk.textContent = "Sign in to answer for this household.";
       return;
     }
 
@@ -673,10 +797,15 @@
       if (!reply.ok) { throw new Error("refused"); }
       return reply.json();
     }).then(function () {
+      // Read the whole day again rather than patching the screen. The answer
+      // changes what the engine says, not just what this panel shows: the
+      // state, the colour, the band on the chart and what the family were
+      // told all move together.
       day.answers = day.answers || {};
-      day.answers[episode] = { episode: episode, outcome: outcome };
+      day.answers[episode] = { episode: episode, outcome: outcome, by: session.name };
       ui.answerAsk.textContent = SAID[outcome] || "Thank you.";
       ui.answerButtons.textContent = "";
+      load(ui.scenario.value, true);
     }).catch(function () {
       button.textContent = "Could not save, try again";
       Array.prototype.forEach.call(ui.answerButtons.children, function (other) {
@@ -717,7 +846,7 @@
     var down = (reading.devices_down || []).length;
     var total = (day.devices || []).length;
     var rows = [
-      ["Last movement", reading.silence_began ? clockOf(reading.began_minute) : "none today"],
+      ["Last movement", reading.silence_began ? whenOf(reading.began_minute) : "none today"],
       ["Where", reading.last_device_name || "nowhere yet"],
       ["Cameras", down ? (total - down) + " of " + total + " watching" : total + " watching"]
     ];
@@ -811,6 +940,9 @@
   }
 
   /* ---------- wiring ---------- */
+
+  ui.gateForm.addEventListener("submit", signIn);
+  ui.who.addEventListener("click", signOut);
 
   ui.scenario.addEventListener("change", function () {
     following = true;

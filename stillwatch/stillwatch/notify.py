@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .clock import clock
-from .monitor import ALERT, BLIND, CONCERN, NO_CONTACT, UNKNOWN
+from .monitor import ALERT, BLIND, CONCERN, NO_CONTACT, SETTLED, UNKNOWN, when_text
 from .narrate import Narration
 from .rhythm import human_duration
 
@@ -31,6 +31,7 @@ ALERT_NOTICE = "alert"
 REMINDER_NOTICE = "reminder"
 ALL_CLEAR_NOTICE = "all_clear"
 BLIND_NOTICE = "blind"
+ANSWERED_NOTICE = "answered"
 
 LOW = "low"
 URGENT = "urgent"
@@ -104,7 +105,7 @@ def _body(lead, reading, link):
 
 def compose(kind, person, reading, link=None, last=False):
     """The words a caregiver reads. One place, so it can be rewritten later."""
-    since = _clock(reading.silence_began)
+    since = when_text(reading.silence_began, reading.at)
     quiet = human_duration(reading.silence_seconds)
 
     if kind == CONCERN_NOTICE:
@@ -134,6 +135,63 @@ def compose(kind, person, reading, link=None, last=False):
     return subject, _body(lead, reading, link), urgency
 
 
+def deliver(channels, notice):
+    """Hand one notice to every channel, and record what became of it."""
+    for channel in channels:
+        try:
+            channel.send(notice)
+        except Exception as error:
+            notice.errors.append("%s: %s" % (channel.name, error))
+            continue
+        notice.delivered_to.append(channel.name)
+        # A log file accepting the message is not a caregiver hearing it.
+        if getattr(channel, "reaches_people", True):
+            notice.reached_people = True
+    return notice
+
+
+def answer_notice(person, outcome, by, at, note=None, episode=None):
+    """What everybody else is told once one of them has looked.
+
+    A family of three all get the alert, and without this all three phone. The
+    name matters more than the words: knowing which of them has already been is
+    the whole point of saying anything.
+    """
+    who = (by or "").strip() or "Somebody at the dashboard"
+
+    if outcome == "fine":
+        lead = "%s has checked on %s, and all is well." % (who, person)
+    elif outcome == "away":
+        lead = "%s says %s was out of the house, not still." % (who, person)
+    elif outcome == "expected":
+        lead = ("%s says this is normal for %s now, so Stillwatch will expect quiet"
+                " like it at that hour from here on." % (who, person))
+    elif outcome == "helped":
+        lead = ("%s says something was wrong and it has been dealt with."
+                % who)
+    else:
+        lead = "%s has answered." % who
+
+    lines = [lead, ""]
+    if note:
+        lines.append("- They added: %s" % note)
+    lines.append("- Nobody else needs to check. Stillwatch has stopped asking about this.")
+    lines.append("- It is still watching, and will write again if anything changes.")
+
+    return Notice(at=at, kind=ANSWERED_NOTICE, urgency=INFO,
+                  subject=_subject("%s has been checked on" % person),
+                  body="\n".join(lines), state=SETTLED, episode=episode)
+
+
+def announce_answer(channels, person, outcome, by, at, note=None, episode=None):
+    """Tell everyone an answer has come in. Returns the channels that took it."""
+    if not channels:
+        return []
+    notice = answer_notice(person, outcome, by, at, note=note, episode=episode)
+    deliver(channels, notice)
+    return list(notice.delivered_to)
+
+
 class Notifier:
     def __init__(self, person, channels, repeat_minutes=REPEAT_MINUTES, link=None,
                  hold_minutes=CONCERN_HOLD_MINUTES, narrator=None, answered=None):
@@ -161,7 +219,7 @@ class Notifier:
             return self.link(reading)
         return self.link
 
-    def _deliver(self, kind, reading, episode, last=False):
+    def _deliver(self, kind, reading, episode, last=False):  # noqa: C901
         subject, body, urgency = compose(kind, self.person, reading,
                                          self._link_for(reading), last=last)
         written_by_model = False
@@ -177,16 +235,7 @@ class Notifier:
         notice = Notice(at=reading.at, kind=kind, urgency=urgency, subject=subject,
                         body=body, state=reading.state, episode=episode,
                         written_by_model=written_by_model)
-        for channel in self.channels:
-            try:
-                channel.send(notice)
-            except Exception as error:
-                notice.errors.append("%s: %s" % (channel.name, error))
-                continue
-            notice.delivered_to.append(channel.name)
-            # A log file accepting the message is not a caregiver hearing it.
-            if getattr(channel, "reaches_people", True):
-                notice.reached_people = True
+        deliver(self.channels, notice)
         if notice.delivered:
             self.sent.append(notice)
         return notice

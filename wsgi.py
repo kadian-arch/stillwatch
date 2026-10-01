@@ -11,7 +11,15 @@ Configuration comes from the environment, never from a file in the repository:
     DATABASE_URL                       Postgres, set by Heroku automatically
     STILLWATCH_DB                      fallback store when there is no Postgres
     STILLWATCH_SNS_TOPIC_ARN           optional, to send real notifications
+    STILLWATCH_BEDROCK_MODEL_ID        optional, to have the opening sentence
+                                       of a message written rather than built
     STILLWATCH_NOTIFY                  1 to judge on a timer and send messages
+    STILLWATCH_PASSCODE                set it and the household is behind a
+                                       sign in; leave it empty and the page
+                                       says out loud that anyone can see it
+    STILLWATCH_SESSION_SECRET          optional, what session cookies are
+                                       signed with; falls back to a key
+                                       derived from the webhook secret
 """
 
 import os
@@ -39,10 +47,18 @@ if _demo_folder:
     if demo.scenarios():
         source = CompositeSource(source, demo)
 
+# Built once and shared. The watcher sends what it decides on a timer, and
+# the dashboard sends the one message a timer cannot produce: somebody saying
+# they have been and looked.
+from stillwatch.notify import channels_from_env
+
+channels = channels_from_env()
+
 app = create_app(
     source,
     store=store,
     webhook_secret=os.environ.get("STILLWATCH_RING_WEBHOOK_SECRET", "").strip(),
+    channels=channels,
 )
 
 # Nobody opens a dashboard at four in the morning, which is when it matters, so
@@ -51,11 +67,15 @@ app = create_app(
 # its own silence. This assumes a single worker; more than one would each hold
 # their own notifier and a caregiver would hear everything twice.
 if os.environ.get("STILLWATCH_NOTIFY", "").strip() == "1":
-    from stillwatch.notify import channels_from_env
+    from stillwatch.narrate import narrator_from_env
     from stillwatch.watch import LiveWatcher
 
+    # Bedrock rewrites the opening sentence of a message and nothing else. The
+    # reasoning under it is the engine's and is sent exactly as produced, so a
+    # model being unavailable costs the message its tone and none of its facts.
     LiveWatcher(
         store,
         os.environ.get("STILLWATCH_PERSON", "The household"),
-        channels_from_env(),
+        channels,
+        narrator=narrator_from_env(),
     ).start()

@@ -13,8 +13,10 @@ import threading
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, make_response, request, send_from_directory
 from markupsafe import escape
+
+from . import access
 
 from .clock import (
     clock,
@@ -35,13 +37,33 @@ from .model import (
     parse_timestamp,
 )
 from .monitor import ALERT_AT, CONCERN_AT, QUIET_AT, assess, walk
-from .notify import MemoryChannel, Notifier
+from .notify import MemoryChannel, Notifier, announce_answer
 from .ring import RingClient, RingError, normalise_many, verify_signature
 from .rhythm import ANY_INTERIOR, WINDOWS, daytype_of, human_duration, learn
 
 WEB = Path(__file__).resolve().parent / "web"
 STEP_MINUTES = 5
 DAY_MINUTES = 24 * 60
+
+# Sent on every response. None of it replaces the gate in access.py; it closes
+# the gaps around it, so the page cannot be framed by somebody else's site and
+# the browser never guesses at a content type.
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "style-src 'self' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'"
+    ),
+}
 
 
 class ReplaySource:
@@ -207,12 +229,17 @@ def _day_outages(events, midnight):
     return spans
 
 
-def build_day(source, key, on=None, confirmed=(), answers=()):
+def build_day(source, key, on=None, confirmed=(), answers=(), last_contact=None):
     """Everything the dashboard needs for one day, computed once.
 
     `on` asks for a particular date. A caregiver wants to know what yesterday
     looked like, and a day that has already finished is walked end to end
     rather than stopping at the present.
+
+    `last_contact` only applies to today. It is when something was last
+    delivered to the service, which is the difference between a house where
+    nobody moved and a feed that stopped. Carrying it into a finished day would
+    be claiming the connection was alive then because it is alive now.
     """
     meta = source.describe(key) or {"key": key, "title": key}
     events = source.events(key)
@@ -226,7 +253,8 @@ def build_day(source, key, on=None, confirmed=(), answers=()):
         target = meta.get("target_day")
         day = on or (date.fromisoformat(target) if target else last_covered_day(events))
     # Only today is still being written. Every other day is finished.
-    today = live and day == local_date(now)
+    is_today = live and day == local_date(now)
+    said = {row["episode"]: row for row in answers}
 
     midnight = midnight_on(day)
     daytype = daytype_of(midnight)
@@ -235,9 +263,11 @@ def build_day(source, key, on=None, confirmed=(), answers=()):
     # A replay walks the whole day. Live stops at the present, because the rest
     # of today has not happened yet.
     last = midnight + timedelta(minutes=DAY_MINUTES - STEP_MINUTES)
-    if today:
+    if is_today:
         last = min(last, now)
-    readings = walk(events, baseline, roster, midnight, last, STEP_MINUTES)
+    readings = walk(events, baseline, roster, midnight, last, STEP_MINUTES,
+                    last_contact=last_contact if is_today else None,
+                    answered=said.get)
 
     views = []
     for reading in readings:
@@ -254,11 +284,12 @@ def build_day(source, key, on=None, confirmed=(), answers=()):
         source.persona(),
         [outbox],
         link=lambda reading: "/?scenario=%s&t=%s" % (key, clock(reading.at)),
+        answered=said.get,
     )
     for reading in readings:
         notifier.observe(reading)
 
-    today, dings = _day_activity(events, roster, midnight)
+    activity, dings = _day_activity(events, roster, midnight)
     quiet = [baseline.tolerated_quiet(daytype, hour) for hour in range(24)]
 
     return {
@@ -266,10 +297,10 @@ def build_day(source, key, on=None, confirmed=(), answers=()):
         "persona": source.persona(),
         "source": getattr(source, "kind", "replay"),
         "live": live,
-        "as_of": (now if today else midnight + timedelta(minutes=DAY_MINUTES)).isoformat(),
+        "as_of": (now if is_today else midnight + timedelta(minutes=DAY_MINUTES)).isoformat(),
         # Not "today": that key already carries this day's activity per camera.
-        "is_today": today,
-        "answers": {row["episode"]: row for row in answers},
+        "is_today": is_today,
+        "answers": said,
         "day": day.isoformat(),
         "weekday": midnight.strftime("%A"),
         "timezone": str(household_tz()),
@@ -292,7 +323,7 @@ def build_day(source, key, on=None, confirmed=(), answers=()):
             }
             for notice in outbox.notices
         ],
-        "today": today,
+        "today": activity,
         "dings": dings,
         "outages": _day_outages(events, midnight),
         "baseline": {
@@ -326,26 +357,62 @@ time from the Ring app.</p>
 </section></main></body></html>"""
 
 
-def create_app(source, store=None, webhook_secret=None, ring=None):
+def create_app(source, store=None, webhook_secret=None, ring=None,
+               channels=None, environ=None):
     app = Flask(__name__, static_folder=None)
     cache = {}
     lock = threading.Lock()
     live = getattr(source, "kind", "replay") == "live"
+    environ = os.environ if environ is None else environ
+    channels = list(channels or [])
+
+    passcode = access.passcode_for(environ)
+    key = access.signing_key(environ)
+    # A passcode with nothing to sign cookies with would lock everybody out
+    # including the household, so the gate is only up when both exist.
+    locked = bool(passcode and key)
+    sign_in_throttle = access.Throttle(limit=8, seconds=15 * 60)
+    answer_throttle = access.Throttle(limit=30, seconds=60)
+
+    def viewer():
+        """Who is asking, or None if nobody has signed in."""
+        if not locked:
+            return None
+        return access.read(request.cookies.get(access.COOKIE), key)
+
+    def allowed():
+        return (not locked) or viewer() is not None
+
+    def demo_only(scenario):
+        """Recorded days stay open. They are not anybody's home."""
+        entry = source.describe(scenario) or {}
+        return bool(entry.get("demo")) or not entry.get("live", live)
+
+    @app.after_request
+    def harden(response):
+        for name, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        if request.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
 
     def known(key):
         return key in {entry["key"] for entry in source.scenarios()}
 
-    def bundle(key, on=None):
+    def bundle(scenario, on=None):
         # Today keeps happening, so it is never cached. A day that has finished
         # cannot change, so it is worked out once.
         confirmed = tuple(store.confirmed_quiet()) if store is not None else ()
         said = tuple(store.answers()) if store is not None else ()
-        if live and key == "live" and (on is None or on == local_date(datetime.now(timezone.utc))):
-            return build_day(source, key, confirmed=confirmed, answers=said)
-        token = (key, on.isoformat() if on else None)
+        contact = store.last_delivery_at() if store is not None else None
+        if (live and scenario == "live"
+                and (on is None or on == local_date(datetime.now(timezone.utc)))):
+            return build_day(source, scenario, confirmed=confirmed, answers=said,
+                             last_contact=contact)
+        token = (scenario, on.isoformat() if on else None)
         with lock:
             if token not in cache:
-                cache[token] = build_day(source, key, on, confirmed=confirmed,
+                cache[token] = build_day(source, scenario, on, confirmed=confirmed,
                                          answers=said)
             return cache[token]
 
@@ -367,6 +434,43 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
     def static_file(name):
         return send_from_directory(WEB, name)
 
+    @app.get("/api/session")
+    def session():
+        return jsonify({"locked": locked, "name": viewer()})
+
+    @app.post("/api/session")
+    def sign_in():
+        if not locked:
+            return jsonify({"locked": False, "name": None}), 200
+        if not sign_in_throttle.allow(access.caller(request)):
+            return jsonify({"error": "too many attempts, wait a few minutes"}), 429
+
+        body = request.get_json(silent=True) or request.form or {}
+        name = access.clean_name(body.get("name"))
+        if not name:
+            abort(400, description="a name is needed, so the family can see who answered")
+        if not access.matches(body.get("passcode"), passcode):
+            # Deliberately the same answer whatever was wrong with it.
+            return jsonify({"error": "that passcode is not right"}), 401
+
+        reply = make_response(jsonify({"locked": True, "name": name}))
+        reply.set_cookie(
+            access.COOKIE,
+            access.issue(name, key),
+            max_age=access.SESSION_DAYS * 24 * 3600,
+            httponly=True,
+            samesite="Lax",
+            secure=request.is_secure,
+            path="/",
+        )
+        return reply
+
+    @app.delete("/api/session")
+    def sign_out():
+        reply = make_response(jsonify({"locked": locked, "name": None}))
+        reply.delete_cookie(access.COOKIE, path="/")
+        return reply
+
     @app.get("/api/health")
     def health():
         payload = {
@@ -375,11 +479,18 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
             "scenarios": len(source.scenarios()),
             "webhook": bool(store is not None and webhook_secret),
             "ring_linked": bool(store is not None and store.is_linked()),
+            "locked": locked,
+            "name": viewer(),
         }
         if store is not None:
             last = store.last_event_at()
+            delivered = store.last_delivery_at()
+            watched = store.load_state("watcher") or {}
             payload["stored_events"] = store.count()
             payload["last_event_at"] = last.isoformat() if last else None
+            payload["last_delivery_at"] = delivered.isoformat() if delivered else None
+            payload["watching"] = bool(watched.get("at"))
+            payload["last_tick_at"] = watched.get("at")
         return jsonify(payload)
 
     def ring_client():
@@ -490,6 +601,11 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
         outcome = str(body.get("outcome") or "").strip()
         note = (body.get("note") or "").strip()[:500] or None
 
+        if not allowed():
+            abort(401, description="sign in before answering for this household")
+        if not answer_throttle.allow(access.caller(request)):
+            return jsonify({"error": "too many answers, slow down"}), 429
+
         if not episode:
             abort(400, description="which stretch of quiet is this about?")
         if outcome not in OUTCOMES:
@@ -507,19 +623,27 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
             latest = store.last_event_at(kinds=("motion", "ding"))
             seconds = max(0.0, ((latest or now) - began).total_seconds())
 
+        by = viewer()
         store.save_answer(
-            episode, outcome, now, note=note,
+            episode, outcome, now, note=note, by=by,
             daytype=daytype_of(began), hour=local_hour(began), seconds=seconds,
         )
         cache.clear()
-        return jsonify({"episode": episode, "outcome": outcome,
-                        "means": OUTCOMES[outcome]}), 200
+
+        # Everybody who would have been chased about this hears that it is
+        # handled, and by whom. A family of three should not each phone.
+        told = announce_answer(channels, source.persona(), outcome, by, now,
+                               note=note, episode=episode)
+        return jsonify({"episode": episode, "outcome": outcome, "by": by,
+                        "means": OUTCOMES[outcome], "told": told}), 200
 
     @app.get("/api/day")
     def day():
-        key = request.args.get("scenario", "")
-        if not known(key):
+        scenario = request.args.get("scenario", "")
+        if not known(scenario):
             abort(404)
+        if not demo_only(scenario) and not allowed():
+            abort(401, description="sign in to see this household")
 
         asked = request.args.get("on", "").strip()
         on = None
@@ -530,26 +654,29 @@ def create_app(source, store=None, webhook_secret=None, ring=None):
                 abort(400, description="on must be a date like 2026-09-25")
             if on > local_date(datetime.now(timezone.utc)):
                 abort(400, description="that day has not happened yet")
-        return jsonify(bundle(key, on))
+        return jsonify(bundle(scenario, on))
 
     @app.get("/api/assess")
     def assess_at():
-        key = request.args.get("scenario", "")
-        if not known(key):
+        scenario = request.args.get("scenario", "")
+        if not known(scenario):
             abort(404)
+        if not demo_only(scenario) and not allowed():
+            abort(401, description="sign in to see this household")
         raw = request.args.get("at")
         try:
             moment = parse_timestamp(raw) if raw else datetime.now(timezone.utc)
         except ValueError:
             abort(400, description="at must be an ISO 8601 timestamp")
 
-        events = source.events(key)
-        roster = source.roster(key)
+        events = source.events(scenario)
+        roster = source.roster(scenario)
         midnight = midnight_before(moment)
         told = tuple(store.confirmed_quiet()) if store is not None else ()
         baseline = learn(events, roster, until=midnight, confirmed=told)
         contact = store.last_delivery_at() if store is not None else None
+        answered = store.answer_for if store is not None else None
         return jsonify(assess(events, baseline, roster, moment,
-                              last_contact=contact).to_dict())
+                              last_contact=contact, answered=answered).to_dict())
 
     return app

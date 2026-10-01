@@ -99,6 +99,28 @@ to be deployed before a real account can be linked.
 server, where a single script installs Python, Postgres, the service and Caddy,
 or a tunnel from a machine you already own.
 
+## What it cannot do
+
+Stillwatch reads a house, not a person. A camera cannot tell who walked past
+it, so a home with more than one person living in it is outside what this can
+judge: the second person's movement reads exactly like the first's.
+
+The one part of that question the cameras can settle on their own is answered.
+Nobody is in two rooms at the same second, so movement in two rooms seconds
+apart is two people, and the day says so in words rather than quietly judging
+the wrong one. Working out which cameras watch the way *between* rooms, so
+that one person stepping through a door is not mistaken for two, is learned
+from the household's own weeks rather than from what the cameras were named.
+
+It holds no video and no images. It reads only that movement was seen and at
+what time, which is also why it cannot tell somebody who has fallen from
+somebody who is reading quietly. It can only say that the stillness has gone
+on far longer than this person's own history says it should, and show the
+working.
+
+[docs/SECURITY.md](docs/SECURITY.md) covers what is worth attacking here and
+what stops it.
+
 ## Hackathon submission
 
 Built for **Build, Ship, Shape: Amazon Developer Hackathon**.
