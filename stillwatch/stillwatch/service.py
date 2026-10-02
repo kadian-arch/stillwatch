@@ -49,6 +49,11 @@ DAY_MINUTES = 24 * 60
 # the gaps around it, so the page cannot be framed by somebody else's site and
 # the browser never guesses at a content type.
 SECURITY_HEADERS = {
+    # A year, including subdomains, and offered for preloading. The dashboard
+    # is served over TLS and nothing about it should ever be attempted in
+    # clear, including the first request of a session, which is the one a
+    # redirect cannot protect.
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",

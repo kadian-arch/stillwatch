@@ -234,6 +234,12 @@ def test_the_headers_are_set():
           in page.headers.get("Content-Security-Policy", ""))
     check("api answers are never cached",
           client.get("/api/health").headers.get("Cache-Control") == "no-store")
+    # Without this, the first request of a session can still be made in clear,
+    # and a redirect to TLS arrives too late to protect the one that carried
+    # the session cookie.
+    strict = page.headers.get("Strict-Transport-Security", "")
+    check("the browser is told never to use plain http",
+          "max-age=31536000" in strict and "includeSubDomains" in strict, strict)
 
 
 def main():

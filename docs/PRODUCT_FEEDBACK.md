@@ -115,30 +115,68 @@ a person rather than a system. Integrated through `boto3` against the
 `converse` API, with a system prompt, a tone per notice kind, and a validator
 that rejects any reply containing a number not present in the supplied facts.
 
-**Not yet run against the live service.** The AWS account was suspended during
-the build, so this path is exercised against stand-in clients in the test suite
-and falls back to the deterministic sentence in production. Feedback below is
-therefore about building against the API, not about model behaviour.
+**Run against the live service.** The opening sentences in production are
+written by `amazon.nova-lite-v1:0`.
 
 **What is good.** `converse` is a clean shape to code against: one call, a
 messages list, a system block, and an inference configuration, with the same
 signature across models. Not having to learn a different request body per model
 family is a real saving for a small project. Swapping models is one environment
-variable.
+variable. First call to last worked out at 378ms.
 
-**What got in the way.** A model has two names and the useful one is not the
-one you reach for. Calling `amazon.nova-lite-v1:0` can be refused outright for
-on-demand use, and the fix is to call the cross region inference profile that
-contains it, `us.amazon.nova-lite-v1:0`. Nothing on the model card leads with
-this; it surfaces only in the error text at the moment of the call. A first
-integration therefore fails in a way that reads like a permissions problem and
-is not one. The model card could carry the profile id as the id to use.
+**What got in the way: one error sentence for four unrelated faults.**
+`ValidationException: Operation not allowed` is returned for an account that
+may not call the model, a region that does not carry it, terms that were never
+accepted, and a model name the account cannot use. It names neither the model,
+nor the region, nor which of the four it is. Getting from that sentence to a
+working call took the best part of a day and four wrong diagnoses, every one of
+them consistent with the evidence available at the time.
 
-Separately, the model access page has been retired in favour of models
-enabling themselves on first invocation, which is a genuine improvement, but
-a good deal of writing still tells you to go to that page and grant access.
-Arriving at a page that says it no longer does anything, while following a
-current instruction to use it, is an unhelpful first minute.
+**What made it worse: the diagnostic API contradicted the runtime.** In
+`us-east-1`, on the account in question:
+
+    aws bedrock get-foundation-model-availability \
+      --region us-east-1 --model-id amazon.nova-lite-v1:0
+
+    "authorizationStatus": "AUTHORIZED",
+    "entitlementAvailability": "AVAILABLE",
+    "regionAvailability": "AVAILABLE",
+    "agreementAvailability": { "status": "AVAILABLE" }
+
+and then, in the same region, same account, same model, as an account
+administrator in CloudShell:
+
+    aws bedrock-runtime converse --region us-east-1 \
+      --model-id amazon.nova-lite-v1:0 ...
+
+    ValidationException: Operation not allowed
+
+The same call in `us-west-2` answered normally. So the restriction is per
+account and per region, and the API whose entire purpose is to report whether a
+model may be used does not report it. Service Quotas did not show it either:
+the Nova Lite on-demand limits read 100 requests and 4,000,000 tokens a minute,
+not zero. Having checked both of the places AWS provides for checking, a
+developer still has no way to learn this except by calling the model in every
+region in turn.
+
+Two changes would have saved the day. First, distinct error codes, or at
+minimum the region and the failing precondition in the message text. Second,
+`GetFoundationModelAvailability` reporting account and region eligibility,
+since a model reported AVAILABLE and AUTHORIZED in a region that will not serve
+it is worse than no answer, because it is believed.
+
+**A smaller one: a model has two names.** `amazon.nova-lite-v1:0` and the
+cross region inference profile `us.amazon.nova-lite-v1:0` are the same model,
+and which one an account may use varies. Some models refuse the plain id and
+say so only in the error text at the moment of the call. The model card could
+carry both and say when each applies.
+
+**And a stale trail.** The model access page has been retired in favour of
+models enabling themselves on first invocation, which is a genuine improvement,
+but a good deal of current writing still directs you to that page. Arriving at
+a page that says it no longer does anything, while following an instruction to
+use it, is an unhelpful first minute.
+
 
 **What we would ask for.** A documented way to express "do not introduce any
 token that is not in the input" would let a caller state the constraint rather

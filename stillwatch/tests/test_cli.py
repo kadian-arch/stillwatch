@@ -76,6 +76,29 @@ def say(narrator):
     return code, out.getvalue()
 
 
+def test_it_runs_from_where_people_run_it():
+    section("the command works from either folder")
+
+    # Production runs from the repository root, where the name `stillwatch`
+    # finds the outer folder rather than the package inside it. That answered
+    # a correct command with a message about a package that cannot be
+    # executed, on the deployed service, with no local way to notice.
+    env = dict(os.environ)
+    env["STILLWATCH_NOTICE_CONSOLE"] = "1"
+    for name in ("STILLWATCH_SNS_TOPIC_ARN", "AWS_ACCESS_KEY_ID",
+                 "AWS_SECRET_ACCESS_KEY", "STILLWATCH_BEDROCK_MODEL_ID"):
+        env.pop(name, None)
+
+    for where, label in ((ROOT.parent, "the repository root"),
+                         (ROOT, "the package folder")):
+        done = subprocess.run(
+            [sys.executable, "-m", "stillwatch", "notify-test", "--person", "Margarette"],
+            cwd=str(where), env=env, capture_output=True, text=True, timeout=120)
+        check("it runs from %s" % label,
+              done.returncode == 0 and "console  sent" in done.stdout,
+              (done.stdout + done.stderr).strip()[:200])
+
+
 def test_the_message_test_runs():
     section("the command that proves messages get out")
 
@@ -241,6 +264,7 @@ def test_the_watchdog_runs():
 
 def main():
     for test in (
+        test_it_runs_from_where_people_run_it,
         test_the_message_test_runs,
         test_it_reports_a_model_it_could_not_use,
         test_it_uses_a_model_it_could_reach,
