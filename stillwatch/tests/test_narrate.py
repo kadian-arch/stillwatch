@@ -218,6 +218,52 @@ def test_it_reaches_the_message():
            lying.notices[0].written_by_model is False)
 
 
+def test_a_model_that_wants_its_other_name():
+    section("the model that refuses its own id")
+
+    class Picky:
+        """Refuses the plain id the way Bedrock does, takes the profile."""
+
+        def __init__(self):
+            self.tried = []
+
+        def converse(self, **kwargs):
+            self.tried.append(kwargs["modelId"])
+            if not kwargs["modelId"].startswith("us."):
+                raise RuntimeError(
+                    "Invocation of model ID amazon.nova-lite-v1:0 with on-demand"
+                    " throughput isn't supported. Retry your request with the ID"
+                    " or ARN of an inference profile that contains this model.")
+            return {"output": {"message": {"content": [{"text": "All quiet at her home."}]}}}
+
+    client = Picky()
+    narrator = BedrockNarrator("amazon.nova-lite-v1:0", client=client, region="us-east-1")
+    first = narrator.narrate_facts("all_clear", "Who lives here: Margarette", "fallback")
+
+    report("it tries the plain id first", client.tried[0] == "amazon.nova-lite-v1:0")
+    report("then the cross region profile", client.tried[1] == "us.amazon.nova-lite-v1:0")
+    report("and the message is written", first.used_model and first.text == "All quiet at her home.")
+    report("the second name is remembered", narrator.model_id == "us.amazon.nova-lite-v1:0")
+
+    narrator.narrate_facts("all_clear", "Who lives here: Margarette", "fallback")
+    report("so the failing call is never paid for twice",
+          client.tried[2:] == ["us.amazon.nova-lite-v1:0"], str(client.tried))
+
+    # Only that one complaint. Anything else is a real failure and the
+    # engine's own sentence goes out, which is the whole point of having one.
+    other = BedrockNarrator("amazon.nova-lite-v1:0",
+                            client=FakeBedrock(fail=RuntimeError("no credentials")),
+                            region="us-east-1")
+    said = other.narrate_facts("all_clear", "facts", "the engine's own sentence")
+    report("any other failure falls back instead of retrying",
+          not said.used_model and said.text == "the engine's own sentence")
+
+    # A region with no geography of its own gets no second guess.
+    far = BedrockNarrator("amazon.nova-lite-v1:0", client=Picky(), region="ap-south-1")
+    report("and a region with no profile prefix does not invent one",
+          far._profile_id() is None)
+
+
 def test_configuration():
     section("configuration")
     report("with nothing configured there is no narrator", narrator_from_env({}) is None)
@@ -232,6 +278,7 @@ def main():
         test_the_model_writes_it,
         test_the_model_cannot_make_it_wrong,
         test_it_reaches_the_message,
+        test_a_model_that_wants_its_other_name,
         test_configuration,
     ):
         test()

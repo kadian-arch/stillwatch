@@ -126,6 +126,20 @@ signature across models. Not having to learn a different request body per model
 family is a real saving for a small project. Swapping models is one environment
 variable.
 
+**What got in the way.** A model has two names and the useful one is not the
+one you reach for. Calling `amazon.nova-lite-v1:0` can be refused outright for
+on-demand use, and the fix is to call the cross region inference profile that
+contains it, `us.amazon.nova-lite-v1:0`. Nothing on the model card leads with
+this; it surfaces only in the error text at the moment of the call. A first
+integration therefore fails in a way that reads like a permissions problem and
+is not one. The model card could carry the profile id as the id to use.
+
+Separately, the model access page has been retired in favour of models
+enabling themselves on first invocation, which is a genuine improvement, but
+a good deal of writing still tells you to go to that page and grant access.
+Arriving at a page that says it no longer does anything, while following a
+current instruction to use it, is an unhelpful first minute.
+
 **What we would ask for.** A documented way to express "do not introduce any
 token that is not in the input" would let a caller state the constraint rather
 than validate afterwards. We wrote a checker that rejects invented numbers,

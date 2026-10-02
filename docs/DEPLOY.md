@@ -226,9 +226,19 @@ The access key needs one statement: `sns:Publish` on that topic's ARN.
 
 ### Bedrock, for the wording
 
-Request access to one model in the Bedrock console, then name it. Stillwatch
-calls `converse` with the facts of a message and asks for the opening sentence
-in a human voice. What comes back is checked before anyone sees it: too long,
+Nothing has to be switched on. Bedrock's model access page was retired, and a
+serverless model now enables itself in an account the first time it is called,
+so naming one in the environment is the whole setup.
+
+Name the **cross region inference profile** rather than the plain model id:
+`us.amazon.nova-lite-v1:0`, not `amazon.nova-lite-v1:0`. Several models refuse
+the plain id outright, and say so only in the error. Stillwatch handles that
+case on its own, retrying once under the profile name for the geography it is
+running in and remembering the answer, but naming the profile up front saves a
+call that is certain to fail.
+
+Stillwatch calls `converse` with the facts of a message and asks for the
+opening sentence in a human voice. What comes back is checked before anyone sees it: too long,
 more than one paragraph, a banned word, or any number that is not in the facts
 it was given, and the deterministic sentence is used instead.
 

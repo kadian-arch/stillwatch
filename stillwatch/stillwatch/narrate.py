@@ -52,6 +52,12 @@ TONE = {
                  " went, and do not add anything they did not say."),
 }
 
+# Some models refuse a plain model id and insist on a cross region inference
+# profile instead, which is the same model reached through a different name.
+# Bedrock says so in the error rather than anywhere you would look first.
+NEEDS_PROFILE = "inference profile"
+GEOS = {"us": "us.", "eu": "eu."}
+
 BANNED = re.compile(
     r"\b(alert|system|detected|monitoring|anomaly|status|trigger|dear|regards)\b", re.I)
 NUMBERS = re.compile(r"\d+")
@@ -128,6 +134,7 @@ class BedrockNarrator:
         if not model_id:
             raise ValueError("a Bedrock model id is required")
         self.model_id = model_id
+        self.region = region or os.environ.get("AWS_REGION", DEFAULT_REGION)
         self.max_words = max_words
         self.temperature = temperature
         if client is None:
@@ -136,17 +143,24 @@ class BedrockNarrator:
 
             client = boto3.client(
                 "bedrock-runtime",
-                region_name=region or os.environ.get("AWS_REGION", DEFAULT_REGION),
+                region_name=self.region,
                 config=Config(connect_timeout=timeout, read_timeout=timeout,
                               retries={"max_attempts": 1}),
             )
         self.client = client
 
-    def _ask(self, facts, kind):
+    def _profile_id(self):
+        """The same model, named the way a cross region profile names it."""
+        prefix = GEOS.get(str(self.region).split("-")[0])
+        if not prefix or self.model_id.startswith(tuple(GEOS.values())):
+            return None
+        return prefix + self.model_id
+
+    def _ask(self, facts, kind, model_id=None):
         instruction = "%s\n\n%s\n\nFacts:\n%s\n\nWrite the message." % (
             VOICE, TONE.get(kind, ""), facts)
         reply = self.client.converse(
-            modelId=self.model_id,
+            modelId=model_id or self.model_id,
             messages=[{"role": "user", "content": [{"text": instruction}]}],
             inferenceConfig={"maxTokens": 200, "temperature": self.temperature},
         )
@@ -166,7 +180,18 @@ class BedrockNarrator:
         try:
             text = self._ask(facts, kind)
         except Exception as error:
-            return Narration(fallback, self.model_id, False, "bedrock failed: %s" % error)
+            # Bedrock refuses some models under their own id and wants the
+            # cross region profile that contains them. It says so only in the
+            # error, so the error is where it gets handled. The second name is
+            # kept, because the first will fail every time from now on.
+            profile = self._profile_id() if NEEDS_PROFILE in str(error) else None
+            if profile is None:
+                return Narration(fallback, self.model_id, False, "bedrock failed: %s" % error)
+            try:
+                text = self._ask(facts, kind, profile)
+            except Exception as again:
+                return Narration(fallback, profile, False, "bedrock failed: %s" % again)
+            self.model_id = profile
 
         complaint = check(text, facts, self.max_words)
         if complaint:
