@@ -352,7 +352,6 @@
       }
 
       var liveEntry = entryFor("live");
-      ui.livePill.hidden = !liveEntry;
       ui.dayField.hidden = entries.length < 2;
 
       entries.forEach(function (entry) {
@@ -372,6 +371,12 @@
         if (open.length) { chosen = open[0].key; }
       }
       ui.scenario.value = chosen;
+
+      // The badge says what is on the screen, not what the server happens to
+      // have. It used to appear whenever a live day existed at all, so the
+      // header read "Live" above a recorded day that says in its own banner
+      // that nothing in it came from this home.
+      ui.livePill.hidden = !(liveEntry && chosen === "live");
 
       // A home connected this morning has nothing to show. Say so properly
       // rather than drawing six empty boxes.

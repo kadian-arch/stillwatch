@@ -158,6 +158,17 @@ def _clock(moment):
     return clock(moment)
 
 
+def sentence(text):
+    """First letter up, the rest left exactly as it was.
+
+    `str.capitalize` lowercases everything after the first character. The
+    reason it was used on is two sentences long, so the second one arrived on
+    the dashboard reading "is 4h 39m. that is measured from 144 times", and it
+    would flatten a room or a person's name the day one appears in there.
+    """
+    return text[:1].upper() + text[1:] if text else text
+
+
 def when_text(moment, now):
     """A time, said the way somebody would say it out loud.
 
@@ -481,7 +492,7 @@ def assess(events, baseline, roster, now, last_contact=None, answered=None):
     reasons = [
         "Last movement was in the %s at %s, %s ago."
         % (room, when_text(began, now), human_duration(silence)),
-        baseline.describe_quiet(began_daytype, local_hour(began)).capitalize() + ".",
+        sentence(baseline.describe_quiet(began_daytype, local_hour(began))) + ".",
         "No door has been used since the house went quiet, so she is at home.",
     ]
     if ding_at is not None:

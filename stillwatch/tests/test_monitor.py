@@ -446,6 +446,23 @@ def test_ladder_helpers():
     check("away is not treated as needing attention", not out.needs_attention)
 
 
+def test_reasons_read_like_written_english():
+    section("the reasons on the card are proof read")
+
+    from stillwatch.monitor import sentence
+
+    # str.capitalize lowercases everything after the first letter, which put
+    # "is 4h 39m. that is measured from 144 times" on the live dashboard.
+    two = "the longest she normally stays still is 4h 39m. That is measured from 144 times"
+    check("a second sentence keeps its capital", sentence(two) ==
+          "The longest she normally stays still is 4h 39m. That is measured from 144 times",
+          sentence(two))
+    check("a room name is not flattened",
+          sentence("movement was in the Landing") == "Movement was in the Landing",
+          sentence("movement was in the Landing"))
+    check("an empty string is left alone", sentence("") == "")
+
+
 def main():
     for test in (
         test_expectations_hold,
@@ -465,6 +482,7 @@ def main():
         test_an_unanswered_doorbell_is_worth_saying,
         test_a_time_says_which_day_it_belongs_to,
         test_ladder_helpers,
+        test_reasons_read_like_written_english,
     ):
         test()
 
