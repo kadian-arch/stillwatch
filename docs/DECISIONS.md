@@ -454,21 +454,11 @@ alert has not been proven.
 
 ## 33. Amazon Bedrock is a nicety, and the first live account proved it
 
-The first run against real credentials came back:
-
-    bedrock  not used: ValidationException: Operation not allowed
-    sns      sent
-
-The keys were right, the region was right, the topic was right, and the model
-id was right. Amazon Bedrock inference quotas are applied at zero on accounts
-without billing history, and this one had just come back from suspension. The
-quota is marked not adjustable, so there is no self service path. It needs an
-account verification case.
-
-Nothing about the household's safety depended on the outcome. The judgement
-was made by the engine, the sentence was the engine's own, the message went
-out through SNS, and the one line in the terminal said which part had been
-skipped and why.
+Bedrock spent the first week of deployment unreachable, for reasons that took
+days to pin down. Nothing about the household's safety waited on it. The
+judgement was the engine's, the sentence was the engine's own, the message
+went out through Amazon SNS, and one line in the terminal said which part had
+been skipped and why.
 
 *Consequence:* this is the design working, not the design failing, and the
 write up says so in those words. Bedrock chooses how a message reads. It never

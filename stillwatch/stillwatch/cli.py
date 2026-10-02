@@ -401,6 +401,91 @@ def cmd_notify_test(args):
     return 1 if failed else 0
 
 
+GEO_PREFIXES = ("us", "eu", "apac")
+
+
+def base_model(model_id):
+    """The foundation model behind a cross region inference profile.
+
+    `us.amazon.nova-lite-v1:0` is a routing label over `amazon.nova-lite-v1:0`.
+    Amazon answers questions about the model, not about the label.
+    """
+    head, _, rest = model_id.partition(".")
+    return rest if head in GEO_PREFIXES and rest else model_id
+
+
+def cmd_bedrock_check(args):
+    """Ask Amazon why the model will not answer, instead of guessing.
+
+    Converse reports one error, `Operation not allowed`, for at least four
+    unrelated causes: the model is not offered in this region, the account has
+    not accepted its terms, the account is not entitled to it, or the account
+    is not permitted to call Bedrock at all. Reading that one sentence and
+    guessing which of the four it is costs a day, and the guess is usually
+    wrong. This asks the availability API, which answers all four separately.
+    """
+    model_id = (args.model
+                or os.environ.get("STILLWATCH_BEDROCK_MODEL_ID", "").strip()
+                or "amazon.nova-lite-v1:0")
+    model = base_model(model_id)
+    region = (args.region or os.environ.get("AWS_REGION", "").strip()
+              or "us-east-1")
+
+    client = getattr(args, "client", None)
+    if client is None:
+        import boto3
+
+        client = boto3.client("bedrock", region_name=region)
+
+    try:
+        answer = client.get_foundation_model_availability(modelId=model)
+    except Exception as error:
+        print("could not ask Amazon: %s" % error, file=sys.stderr)
+        print("", file=sys.stderr)
+        print("An access denied here means the key may call the model but not", file=sys.stderr)
+        print("ask about it, which is the policy Stillwatch asks for. Run this", file=sys.stderr)
+        print("in AWS CloudShell, which runs as your console sign in.", file=sys.stderr)
+        return 2
+
+    agreement = answer.get("agreementAvailability") or {}
+    region_ok = answer.get("regionAvailability")
+    terms = agreement.get("status")
+    entitled = answer.get("entitlementAvailability")
+    allowed = answer.get("authorizationStatus")
+
+    print("%s in %s" % (model, region))
+    for name, value, question in (
+        ("region", region_ok, "is the model offered here"),
+        ("terms", terms, "has the account accepted its agreement"),
+        ("entitlement", entitled, "is the account entitled to it"),
+        ("authorized", allowed, "may the account call it at all"),
+    ):
+        print("  %-12s %-14s %s" % (name, value or "unknown", question))
+    if agreement.get("errorMessage"):
+        print("  %-12s %s" % ("note", agreement["errorMessage"]))
+
+    print("")
+    if region_ok == "NOT_AVAILABLE":
+        print("The model is not offered in %s. Pick a region that has it." % region)
+        return 1
+    if allowed != "AUTHORIZED":
+        print("The account itself is not authorized, which is nothing to do with")
+        print("this key or this model. A newly opened or newly reinstated account")
+        print("sits in a limited state until AWS has seen it used. Running any")
+        print("small billable resource for a few minutes clears it, and so does")
+        print("an account verification case with support.")
+        return 1
+    if terms != "AVAILABLE" or entitled != "AVAILABLE":
+        print("The account is allowed to use Bedrock but has not taken up this")
+        print("model. Open it once in the Bedrock console playground, which")
+        print("accepts the terms, then try again.")
+        return 1
+
+    print("Nothing is blocking the model. If Converse still refuses, the key is")
+    print("missing bedrock:InvokeModel on %s." % model_id)
+    return 0
+
+
 def cmd_probe(args):
     """Call the real Ring API with a Playground token and report what comes back.
 
@@ -584,6 +669,14 @@ def build_parser():
         "notify-test", help="Send one test message through the configured channels.")
     tester.add_argument("--person", default="this household")
     tester.set_defaults(handler=cmd_notify_test)
+
+    asker = commands.add_parser(
+        "bedrock-check",
+        help="Ask Amazon whether the account may call the model, and why not.")
+    asker.add_argument("--model", default=None,
+                       help="Defaults to STILLWATCH_BEDROCK_MODEL_ID.")
+    asker.add_argument("--region", default=None, help="Defaults to AWS_REGION.")
+    asker.set_defaults(handler=cmd_bedrock_check)
 
     guard = commands.add_parser(
         "watchdog", help="Check that the watcher and the feed are both still alive.")

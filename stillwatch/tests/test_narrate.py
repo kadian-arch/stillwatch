@@ -249,24 +249,98 @@ def test_a_model_that_wants_its_other_name():
     report("so the failing call is never paid for twice",
           client.tried[2:] == ["us.amazon.nova-lite-v1:0"], str(client.tried))
 
-    # Only that one complaint. Anything else is a real failure and the
-    # engine's own sentence goes out, which is the whole point of having one.
-    other = BedrockNarrator("amazon.nova-lite-v1:0",
-                            client=FakeBedrock(fail=RuntimeError("no credentials")),
-                            region="us-east-1")
-    said = other.narrate_facts("all_clear", "facts", "the engine's own sentence")
-    report("any other failure falls back instead of retrying",
+    # The other way round, which is the one that actually happened. The
+    # account was authorized for the model and could not use the profile, and
+    # Bedrock said only "Operation not allowed", naming neither.
+    class Reverse:
+        """Refuses the profile, takes the plain id."""
+
+        def __init__(self):
+            self.tried = []
+
+        def converse(self, **kwargs):
+            self.tried.append(kwargs["modelId"])
+            if kwargs["modelId"].startswith("us."):
+                raise RuntimeError("An error occurred (ValidationException) when"
+                                   " calling the Converse operation: Operation"
+                                   " not allowed")
+            return {"output": {"message": {"content": [{"text": "All quiet at her home."}]}}}
+
+    back = Reverse()
+    narrator = BedrockNarrator("us.amazon.nova-lite-v1:0", client=back,
+                               region="us-east-1")
+    said = narrator.narrate_facts("all_clear", "Who lives here: Margarette", "fallback")
+    report("a profile that is refused falls back to the plain id",
+          back.tried == ["us.amazon.nova-lite-v1:0", "amazon.nova-lite-v1:0"],
+          str(back.tried))
+    report("and the message is written after all",
+          said.used_model and said.text == "All quiet at her home.")
+
+    # When neither name works the engine's own sentence goes out, and the
+    # reason names both attempts, because one of them is the real complaint.
+    dead = BedrockNarrator("amazon.nova-lite-v1:0",
+                           client=FakeBedrock(fail=RuntimeError("no credentials")),
+                           region="us-east-1")
+    said = dead.narrate_facts("all_clear", "facts", "the engine's own sentence")
+    report("with neither name working the engine's sentence goes out",
           not said.used_model and said.text == "the engine's own sentence")
+    report("and the reason says both names were tried",
+          "no credentials" in said.reason and "us.amazon.nova-lite-v1:0" in said.reason,
+          said.reason)
 
     # A region with no geography of its own gets no second guess.
     far = BedrockNarrator("amazon.nova-lite-v1:0", client=Picky(), region="ap-south-1")
     report("and a region with no profile prefix does not invent one",
-          far._profile_id() is None)
+          far._other_id() is None)
+    near = BedrockNarrator("us.amazon.nova-lite-v1:0", client=Picky(), region="ap-south-1")
+    report("while a profile gives up its prefix whatever the region",
+          near._other_id() == "amazon.nova-lite-v1:0")
+
+
+def test_it_must_be_written_like_a_person_wrote_it():
+    section("a message that looks unproof read is not sendable")
+
+    facts = "Who lives here: Margarette\nWhat has happened: nothing."
+
+    report("a lower case opening is refused",
+           check("she is moving again.", facts) == "does not start with a capital letter")
+    report("her name in lower case is refused",
+           check("Stillwatch says margarette is fine.", facts)
+           == "wrote Margarette as margarette")
+    report("and so is the product's own name",
+           check("Margarette is fine, stillwatch is still watching.", facts)
+           == "wrote Stillwatch as stillwatch")
+    report("shouting a name is refused too",
+           check("MARGARETTE is moving again.", facts)
+           == "wrote Margarette as MARGARETTE")
+    report("a properly written sentence passes",
+           check("Stillwatch has not seen Margarette move.", facts) is None)
+    report("a name the facts never gave is not policed",
+           check("Stillwatch has not seen her move.", facts) is None)
+
+    # The whole point of refusing it: the engine's sentence goes instead.
+    sloppy = BedrockNarrator(
+        "amazon.nova-lite-v1:0", region="us-west-2",
+        client=FakeBedrock(text="stillwatch is confirming it can reach you"
+                                " and nothing is wrong with margarette."))
+    said = sloppy.narrate_facts("all_clear", facts, "the engine's own sentence")
+    report("so the real thing Bedrock wrote on the day is refused",
+           not said.used_model and said.text == "the engine's own sentence")
+    report("and the reason says what was wrong with it",
+           said.reason == "does not start with a capital letter", said.reason)
 
 
 def test_configuration():
     section("configuration")
     report("with nothing configured there is no narrator", narrator_from_env({}) is None)
+    report("bedrock can be pointed at its own region",
+           narrator_from_env({"STILLWATCH_BEDROCK_MODEL_ID": "amazon.nova-lite-v1:0",
+                              "AWS_REGION": "us-east-1",
+                              "STILLWATCH_BEDROCK_REGION": "us-west-2"}).region
+           == "us-west-2")
+    report("and falls back to the account's region when it is not",
+           narrator_from_env({"STILLWATCH_BEDROCK_MODEL_ID": "amazon.nova-lite-v1:0",
+                              "AWS_REGION": "us-east-1"}).region == "us-east-1")
     report("an empty model id is the same as none",
            narrator_from_env({"STILLWATCH_BEDROCK_MODEL_ID": "  "}) is None)
 
@@ -279,6 +353,7 @@ def main():
         test_the_model_cannot_make_it_wrong,
         test_it_reaches_the_message,
         test_a_model_that_wants_its_other_name,
+        test_it_must_be_written_like_a_person_wrote_it,
         test_configuration,
     ):
         test()

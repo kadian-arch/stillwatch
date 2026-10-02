@@ -147,6 +147,76 @@ def test_it_uses_a_model_it_could_reach():
           "names what was last seen" in out, out.strip()[:200])
 
 
+def ask(answer, model="us.amazon.nova-lite-v1:0", region="us-east-1"):
+    """Run the availability check against a stubbed Amazon."""
+
+    class Stub:
+        asked = None
+
+        def get_foundation_model_availability(self, modelId):
+            Stub.asked = modelId
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+    out = io.StringIO()
+    stub = Stub()
+    with redirect_stdout(out):
+        code = cli.cmd_bedrock_check(argparse.Namespace(
+            model=model, region=region, client=stub))
+    return code, out.getvalue(), Stub.asked
+
+
+def test_it_asks_amazon_why_the_model_refuses():
+    section("the check that says why Bedrock will not answer")
+
+    check("a geo profile is asked about as the model underneath it",
+          cli.base_model("us.amazon.nova-lite-v1:0") == "amazon.nova-lite-v1:0")
+    check("and a plain model id is left alone",
+          cli.base_model("amazon.nova-lite-v1:0") == "amazon.nova-lite-v1:0")
+
+    code, out, asked = ask({
+        "regionAvailability": "AVAILABLE",
+        "agreementAvailability": {"status": "AVAILABLE"},
+        "entitlementAvailability": "AVAILABLE",
+        "authorizationStatus": "NOT_AUTHORIZED",
+    })
+    check("it asks about the foundation model, not the routing label",
+          asked == "amazon.nova-lite-v1:0", str(asked))
+    check("an unauthorized account is named as the account's problem",
+          code == 1 and "account itself is not authorized" in out,
+          out.strip()[:200])
+    check("and it says what clears it",
+          "limited state" in out, out.strip()[:200])
+
+    code, out, asked = ask({
+        "regionAvailability": "AVAILABLE",
+        "agreementAvailability": {"status": "NOT_AVAILABLE"},
+        "entitlementAvailability": "NOT_AVAILABLE",
+        "authorizationStatus": "AUTHORIZED",
+    })
+    check("terms not accepted is told apart from the account being blocked",
+          code == 1 and "has not taken up this" in out, out.strip()[:200])
+
+    code, out, asked = ask({
+        "regionAvailability": "NOT_AVAILABLE",
+        "agreementAvailability": {"status": "NOT_AVAILABLE"},
+        "entitlementAvailability": "NOT_AVAILABLE",
+        "authorizationStatus": "AUTHORIZED",
+    })
+    check("a model missing from the region is told apart from both",
+          code == 1 and "not offered in us-east-1" in out, out.strip()[:200])
+
+    code, out, asked = ask({
+        "regionAvailability": "AVAILABLE",
+        "agreementAvailability": {"status": "AVAILABLE"},
+        "entitlementAvailability": "AVAILABLE",
+        "authorizationStatus": "AUTHORIZED",
+    })
+    check("and when nothing is blocking, it says so and blames the key",
+          code == 0 and "Nothing is blocking" in out, out.strip()[:200])
+
+
 def test_the_watchdog_runs():
     section("the command that watches the watcher")
 
@@ -174,6 +244,7 @@ def main():
         test_the_message_test_runs,
         test_it_reports_a_model_it_could_not_use,
         test_it_uses_a_model_it_could_reach,
+        test_it_asks_amazon_why_the_model_refuses,
         test_the_watchdog_runs,
     ):
         test()

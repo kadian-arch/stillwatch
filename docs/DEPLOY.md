@@ -210,9 +210,10 @@ access key with nothing on it but the one permission it uses.
 ```
 AWS_ACCESS_KEY_ID            a key for a user that can do these two things only
 AWS_SECRET_ACCESS_KEY
-AWS_REGION                   the region the topic and the model live in
+AWS_REGION                   where the topic lives
 STILLWATCH_SNS_TOPIC_ARN     notifications through Amazon SNS
 STILLWATCH_BEDROCK_MODEL_ID  have the opening sentence of a message written
+STILLWATCH_BEDROCK_REGION    where the model lives, if not AWS_REGION
 ```
 
 ### SNS, for the messages
@@ -226,16 +227,39 @@ The access key needs one statement: `sns:Publish` on that topic's ARN.
 
 ### Bedrock, for the wording
 
-Nothing has to be switched on. Bedrock's model access page was retired, and a
-serverless model now enables itself in an account the first time it is called,
-so naming one in the environment is the whole setup.
+Naming a model in the environment is the whole setup. Serverless models enable
+themselves in an account the first time they are called, and the model access
+page that used to govern this has been retired.
 
-Name the **cross region inference profile** rather than the plain model id:
-`us.amazon.nova-lite-v1:0`, not `amazon.nova-lite-v1:0`. Several models refuse
-the plain id outright, and say so only in the error. Stillwatch handles that
-case on its own, retrying once under the profile name for the geography it is
-running in and remembering the answer, but naming the profile up front saves a
-call that is certain to fail.
+Use the plain model id, `amazon.nova-lite-v1:0`. If the account can only reach
+it through a cross region inference profile, Stillwatch finds that out on the
+first failure and retries under `us.amazon.nova-lite-v1:0`, keeping whichever
+name worked. Either value works, and neither has to be got right in advance.
+
+`STILLWATCH_BEDROCK_REGION` exists because a region that carries a model is
+not necessarily a region an account may call it in, and the SNS topic should
+not have to move for the sake of a nicety. Set it when they differ.
+
+Expect to have to find the working region by calling the model, not by asking
+about it. On the account this was built for, `us-east-1` answered every
+question correctly:
+
+    aws bedrock get-foundation-model-availability       --region us-east-1 --model-id amazon.nova-lite-v1:0
+
+    "authorizationStatus": "AUTHORIZED",
+    "entitlementAvailability": "AVAILABLE",
+    "regionAvailability": "AVAILABLE"
+
+and then refused every call, as an administrator, under both model names:
+
+    ValidationException: Operation not allowed
+
+`us-west-2` answered in 378ms. The restriction is per account and per region,
+it is reported by neither the availability API nor Service Quotas, and
+`Operation not allowed` is the same sentence Bedrock uses for an unauthorized
+account, an unavailable region and unaccepted terms. `stillwatch bedrock-check`
+will separate those three. It will not catch this one, because the API it asks
+does not know about it. Calling the model is the only test that does.
 
 Stillwatch calls `converse` with the facts of a message and asks for the
 opening sentence in a human voice. What comes back is checked before anyone sees it: too long,

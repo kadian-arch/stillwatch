@@ -36,7 +36,10 @@ Rules you must not break:
 - Never guess what happened. You do not know whether she has fallen. You know
   she has not moved.
 - Two sentences at most.
-- No greeting, no sign off, no exclamation marks, no capitals for emphasis.
+- Write ordinary sentences with ordinary capital letters. A person's name
+  and the name Stillwatch always begin with a capital.
+- Do not write a whole word in capitals for emphasis.
+- No greeting, no sign off, no exclamation marks.
 - Do not tell them how to feel, and do not tell them it will be fine.
 - Do not use the words alert, system, detected, monitoring, anomaly, status,
   or trigger.
@@ -52,15 +55,21 @@ TONE = {
                  " went, and do not add anything they did not say."),
 }
 
-# Some models refuse a plain model id and insist on a cross region inference
-# profile instead, which is the same model reached through a different name.
-# Bedrock says so in the error rather than anywhere you would look first.
-NEEDS_PROFILE = "inference profile"
+# One model can be reachable under two names: a plain id, and a cross region
+# inference profile, which is the same model behind a prefix. Which of the two
+# an account may use is a property of the account, not of the model, and some
+# accounts may use only one of them. Bedrock reports the wrong choice as
+# `Operation not allowed`, which names neither the model nor the choice.
 GEOS = {"us": "us.", "eu": "eu."}
 
 BANNED = re.compile(
     r"\b(alert|system|detected|monitoring|anomaly|status|trigger|dear|regards)\b", re.I)
 NUMBERS = re.compile(r"\d+")
+
+# The one line of the facts that carries a person's name. Read from there
+# rather than from every capitalised word, because the facts are written in
+# sentences and half their words begin a line.
+NAME_LINE = re.compile(r"Who lives here:\s*(.+)")
 
 
 @dataclass
@@ -107,6 +116,20 @@ def _numbers_in(text):
     return set(NUMBERS.findall(text))
 
 
+def _names_in(facts):
+    """The words the message must not write in lower case.
+
+    A model asked for a plain voice will sometimes drop capitals altogether,
+    and `margarette` in a message to her daughter looks like nobody proof read
+    it, which is exactly the impression this product cannot afford.
+    """
+    names = {"Stillwatch"}
+    found = NAME_LINE.search(facts or "")
+    if found:
+        names.update(w for w in found.group(1).split() if w[:1].isupper())
+    return names
+
+
 def check(text, facts, max_words=DEFAULT_MAX_WORDS):
     """Why this text cannot be sent, or None if it can."""
     if not text or not text.strip():
@@ -123,6 +146,13 @@ def check(text, facts, max_words=DEFAULT_MAX_WORDS):
     invented = _numbers_in(text) - _numbers_in(facts)
     if invented:
         return "invented a number that is not in the facts: %s" % ", ".join(sorted(invented))
+
+    if text[:1].islower():
+        return "does not start with a capital letter"
+    for name in sorted(_names_in(facts)):
+        for written in re.findall(r"\b%s\b" % re.escape(name), text, re.I):
+            if written != name:
+                return "wrote %s as %s" % (name, written)
     return None
 
 
@@ -149,12 +179,17 @@ class BedrockNarrator:
             )
         self.client = client
 
-    def _profile_id(self):
-        """The same model, named the way a cross region profile names it."""
+    def _other_id(self):
+        """The same model under its other name, or None if it has only one.
+
+        A profile id gives up its prefix. A plain id takes the prefix of the
+        region's geography, where that region has one.
+        """
+        head, _, rest = self.model_id.partition(".")
+        if head in GEOS and rest:
+            return rest
         prefix = GEOS.get(str(self.region).split("-")[0])
-        if not prefix or self.model_id.startswith(tuple(GEOS.values())):
-            return None
-        return prefix + self.model_id
+        return prefix + self.model_id if prefix else None
 
     def _ask(self, facts, kind, model_id=None):
         instruction = "%s\n\n%s\n\nFacts:\n%s\n\nWrite the message." % (
@@ -180,18 +215,28 @@ class BedrockNarrator:
         try:
             text = self._ask(facts, kind)
         except Exception as error:
-            # Bedrock refuses some models under their own id and wants the
-            # cross region profile that contains them. It says so only in the
-            # error, so the error is where it gets handled. The second name is
-            # kept, because the first will fail every time from now on.
-            profile = self._profile_id() if NEEDS_PROFILE in str(error) else None
-            if profile is None:
-                return Narration(fallback, self.model_id, False, "bedrock failed: %s" % error)
+            # The other name is simply tried, whichever way round it is. This
+            # used to retry only when the error said the words "inference
+            # profile", which handled a plain id that wanted a profile and not
+            # a profile that wanted a plain id. The second case says
+            # `Operation not allowed` and matched nothing, so a working model
+            # sat unreachable behind a name the account could not use.
+            #
+            # It costs one wasted call on a failure that was never about the
+            # name, once per message, against a product whose sentences are
+            # written by its own engine anyway. That is the right way round.
+            other = self._other_id()
+            if other is None:
+                return Narration(fallback, self.model_id, False,
+                                 "bedrock failed: %s" % error)
             try:
-                text = self._ask(facts, kind, profile)
+                text = self._ask(facts, kind, other)
             except Exception as again:
-                return Narration(fallback, profile, False, "bedrock failed: %s" % again)
-            self.model_id = profile
+                return Narration(fallback, self.model_id, False,
+                                 "bedrock failed: %s (and as %s: %s)"
+                                 % (error, other, again))
+            # Kept, because the first name will fail every time from now on.
+            self.model_id = other
 
         complaint = check(text, facts, self.max_words)
         if complaint:
@@ -211,8 +256,13 @@ def narrator_from_env(environ=None):
     model_id = environ.get("STILLWATCH_BEDROCK_MODEL_ID", "").strip()
     if not model_id:
         return None
+    # Bedrock need not live where the rest of the account does. A region can
+    # carry a model the account cannot call, or the other way round, and the
+    # SNS topic is not going to move for the sake of a nicety.
+    region = (environ.get("STILLWATCH_BEDROCK_REGION", "").strip()
+              or environ.get("AWS_REGION"))
     try:
-        return BedrockNarrator(model_id, region=environ.get("AWS_REGION"))
+        return BedrockNarrator(model_id, region=region)
     except Exception as error:
         print("no narrator: %s" % error)
         return None
