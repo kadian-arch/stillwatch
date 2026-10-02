@@ -21,7 +21,7 @@ from email.message import EmailMessage
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from .clock import clock
+from .clock import clock, local
 from .monitor import ALERT, BLIND, CONCERN, NO_CONTACT, SETTLED, UNKNOWN, when_text
 from .narrate import Narration
 from .rhythm import human_duration
@@ -190,6 +190,39 @@ def answer_notice(person, outcome, by, at, note=None, episode=None):
     return Notice(at=at, kind=ANSWERED_NOTICE, urgency=INFO,
                   subject=_subject("%s has been checked on" % person),
                   body="\n".join(lines), state=SETTLED, episode=episode)
+
+
+def delivery_check(person, at, lead=None):
+    """The message that proves a caregiver can still be reached.
+
+    It is read by people who did not ask for it, on a phone, next to messages
+    that do mean something. So it says in its first line that nothing is
+    wrong, and it is shaped exactly like a real notice, because a path proven
+    with a message built differently from a real alert has not been proven.
+
+    It carries INFO urgency rather than URGENT. That is a deliberate limit: a
+    subscriber who one day filters the topic on urgency would not see this,
+    and a message whose own first line says nothing is wrong has no business
+    being labelled urgent.
+    """
+    when = local(at)
+    lines = [
+        lead or ("Stillwatch is checking that it can still reach the people who"
+                 " have asked to be told about %s's home." % person),
+        "",
+        "- Nothing has happened. The home is being watched as normal, and there"
+        " is nothing to do.",
+        "- A real notice arrives by this same route and reads differently. It"
+        " names what was last seen and how long ago, and it asks somebody to"
+        " check in.",
+        "- Sent automatically at %s on %s." % (
+            clock(at), when.strftime("%d %B %Y")),
+    ]
+
+    return Notice(at=at, kind=ALL_CLEAR_NOTICE, urgency=INFO,
+                  subject=_subject("delivery check for %s's home, no action needed"
+                                   % person),
+                  body="\n".join(lines), state="NORMAL")
 
 
 def announce_answer(channels, person, outcome, by, at, note=None, episode=None,

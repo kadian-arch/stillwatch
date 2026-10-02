@@ -390,3 +390,88 @@ so a quiet hallway still has a shape.
 *Consequence:* it is the clearest evidence on the page that the thresholds
 were learned rather than typed in, which is the claim the whole product rests
 on and was previously only made in words.
+
+---
+
+## 31. The command line is a surface, and it needed a suite of its own
+
+Eight suites were green while `notify-test` crashed on an attribute that has
+never existed. The line it crashed on only runs when Amazon Bedrock is
+unreachable, which is the exact moment somebody is setting Bedrock up and the
+exact moment they need to be told why.
+
+Nothing covered it because nothing ran the commands. Everything underneath
+them was tested thoroughly; the thing a person actually types was not tested
+at all.
+
+Writing that suite found a second bug within the hour. The guard in the same
+command that refuses to run when no notification channel is configured could
+never fire, because a run with nothing configured is given a console channel
+automatically, and the guard asked the channels rather than the configuration.
+It had been passing silently since the day it was written.
+
+*Consequence:* the cheap paths run as real subprocesses, because what is worth
+proving is that the command works when typed. Anything that would reach the
+network is called in process with the model stood in for. Error branches get
+the most attention of all, because they run rarely and always at the worst
+possible moment.
+
+## 32. The message that proves delivery is written like a real one
+
+The command that proves a caregiver can be reached used to send this:
+
+    This is a test of the alert path for Margarette.
+    - If this reached you, a real alert would too.
+    - Nothing is wrong. Nobody needs checking on.
+
+It is addressed to the developer. Everybody else on the topic is a caregiver
+who did not ask for it, reading it on a phone beside messages that do mean
+something, and the first thing it tells them is that they are looking at
+somebody's test.
+
+It now comes from the same place every other message comes from, in the same
+shape: a lead sentence, then the reasons. It says what it is, that nothing has
+happened, and what a real notice would say instead, so that a person who gets
+one later recognises the difference.
+
+    Stillwatch is checking that it can still reach the people who have asked
+    to be told about Margarette's home.
+
+    - Nothing has happened. The home is being watched as normal, and there is
+      nothing to do.
+    - A real notice arrives by this same route and reads differently. It names
+      what was last seen and how long ago, and it asks somebody to check in.
+    - Sent automatically at 11:19 on 02 October 2026.
+
+*Consequence:* it carries INFO urgency, not URGENT. A message whose own first
+line says nothing is wrong has no business being labelled urgent, and a
+caregiver who one day filters the topic on urgency will not see it. That is a
+real limit on what this proves, and it is the right trade.
+
+The reason it is built in `notify.py` beside the others rather than in the
+command is that a path proven with a message shaped differently from a real
+alert has not been proven.
+
+## 33. Amazon Bedrock is a nicety, and the first live account proved it
+
+The first run against real credentials came back:
+
+    bedrock  not used: ValidationException: Operation not allowed
+    sns      sent
+
+The keys were right, the region was right, the topic was right, and the model
+id was right. Amazon Bedrock inference quotas are applied at zero on accounts
+without billing history, and this one had just come back from suspension. The
+quota is marked not adjustable, so there is no self service path. It needs an
+account verification case.
+
+Nothing about the household's safety depended on the outcome. The judgement
+was made by the engine, the sentence was the engine's own, the message went
+out through SNS, and the one line in the terminal said which part had been
+skipped and why.
+
+*Consequence:* this is the design working, not the design failing, and the
+write up says so in those words. Bedrock chooses how a message reads. It never
+decides whether one is sent, and it is never on the path between seeing a
+silence and telling somebody about it. A product that phones a family when
+their mother has not moved cannot have a language model in that path.

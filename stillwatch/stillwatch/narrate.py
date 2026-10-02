@@ -200,9 +200,19 @@ class BedrockNarrator:
 
 
 def narrator_from_env(environ=None):
-    """A narrator only if one is configured. Silence is the default."""
+    """A narrator only if one is configured, and never at the cost of starting.
+
+    Building the client reaches for boto3 and for the region's endpoints, and
+    either can fail on a typo. The service judges a household whether or not
+    anything can write a nicer sentence about it, so a failure here is
+    reported and swallowed rather than raised.
+    """
     environ = os.environ if environ is None else environ
     model_id = environ.get("STILLWATCH_BEDROCK_MODEL_ID", "").strip()
     if not model_id:
         return None
-    return BedrockNarrator(model_id, region=environ.get("AWS_REGION"))
+    try:
+        return BedrockNarrator(model_id, region=environ.get("AWS_REGION"))
+    except Exception as error:
+        print("no narrator: %s" % error)
+        return None

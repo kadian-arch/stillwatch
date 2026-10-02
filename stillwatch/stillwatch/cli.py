@@ -347,19 +347,26 @@ def cmd_notify_test(args):
     from datetime import datetime, timezone
 
     from .narrate import narrator_from_env
-    from .notify import Notice, channels_from_env
+    from .notify import channels_from_env, delivery_check
 
     channels = channels_from_env()
-    reaching = [c for c in channels if getattr(c, "reaches_people", True)]
-    if not reaching:
+    # Asked of the configuration, not of the channels. A run with nothing set
+    # still gets a console channel, so asking the channels whether any of them
+    # reaches a person was answered yes every time and this never fired. The
+    # console counts only where somebody asked for it, because a line printed
+    # in the terminal you are already standing at is not a caregiver hearing
+    # anything, and that is the only question this command exists to answer.
+    somewhere = (os.environ.get("STILLWATCH_SNS_TOPIC_ARN", "").strip()
+                 or os.environ.get("STILLWATCH_SMTP_HOST", "").strip()
+                 or os.environ.get("STILLWATCH_NOTICE_CONSOLE", "").strip() == "1")
+    if not somewhere:
         print("no channel that reaches anyone is configured. Set either", file=sys.stderr)
         print("  STILLWATCH_SMTP_HOST and STILLWATCH_EMAIL_TO, or", file=sys.stderr)
         print("  STILLWATCH_SNS_TOPIC_ARN", file=sys.stderr)
         return 2
 
-    lead = "This is a test of the alert path for %s." % args.person
-    reasons = ("- If this reached you, a real alert would too.\n"
-               "- Nothing is wrong. Nobody needs checking on.")
+    at = datetime.now(timezone.utc)
+    notice = delivery_check(args.person, at)
 
     narrator = narrator_from_env()
     if narrator is None:
@@ -367,24 +374,20 @@ def cmd_notify_test(args):
     else:
         facts = "\n".join([
             "Who lives here: %s" % args.person,
-            "What has happened: nothing. This is a test of the message path.",
-            "What to say: that this is a test and nobody needs checking on.",
+            "What has happened: nothing at all.",
+            "Why this message exists: to confirm that the people who agreed to"
+            " be told about this home can still be reached.",
+            "What to say: that Stillwatch is confirming it can reach them, and"
+            " that nothing is wrong.",
         ])
-        narration = narrator.narrate_facts("all_clear", facts, lead)
+        first = notice.body.split("\n", 1)[0]
+        narration = narrator.narrate_facts("all_clear", facts, first)
         if narration.used_model:
             print("  %-8s wrote: %s" % ("bedrock", narration.text))
-            lead = narration.text
+            notice = delivery_check(args.person, at, lead=narration.text)
+            notice.written_by_model = True
         else:
-            print("  %-8s not used: %s" % ("bedrock", narration.note))
-
-    notice = Notice(
-        at=datetime.now(timezone.utc),
-        kind="alert",
-        urgency="urgent",
-        subject="Stillwatch: test message, no action needed",
-        body="%s\n\n%s" % (lead, reasons),
-        state="ALERT",
-    )
+            print("  %-8s not used: %s" % ("bedrock", narration.reason))
 
     failed = 0
     for channel in channels:
