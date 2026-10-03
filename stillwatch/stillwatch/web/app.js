@@ -387,14 +387,12 @@
 
       load(chosen);
       if (liveEntry) {
-        var todayIso = new Date().toISOString().slice(0, 10);
         ui.onField.hidden = false;
-        ui.onDate.max = todayIso;
-        ui.onDate.value = todayIso;
+        syncDayPicker();
         if (!refresher) {
           refresher = setInterval(function () {
             // A finished day cannot change, so only today is refreshed.
-            if (!viewing || viewing === new Date().toISOString().slice(0, 10)) {
+            if (!viewing || viewing === householdToday()) {
               load(ui.scenario.value, true);
             }
           }, 60000);
@@ -438,6 +436,14 @@
     ui.standby.hidden = true;
   }
 
+  function syncDayPicker() {
+    if (ui.onField.hidden) { return; }
+    var today = householdToday();
+    ui.onDate.max = today;
+    if (!viewing) { ui.onDate.value = today; }
+  }
+
+
   function load(key, quietly) {
     var entry = entryFor(key);
     leaveStandby();
@@ -473,6 +479,7 @@
       })
       .then(function (bundle) {
         day = bundle;
+        syncDayPicker();
         ui.empty.hidden = true;
         draw();
         ui.app.setAttribute("aria-busy", "false");
@@ -716,6 +723,19 @@
   // Denmark reading "no movement since 23:00" needs that to mean eleven at
   // night in her mother's home, so the only thing translated for the viewer
   // is the difference between the two clocks.
+  // The day picker belongs to the house as well. It used to read the viewer's
+  // UTC date, which is not even the viewer's own date. A household in Douala
+  // therefore saw yesterday for the hour after its own midnight, and one in
+  // Tokyo for nine hours of every day, with today unreachable because the
+  // picker is capped at the same wrong value.
+  function householdToday() {
+    var shift = (day && typeof day.utc_offset_minutes === "number")
+      ? day.utc_offset_minutes
+      : -new Date().getTimezoneOffset();
+    return new Date(Date.now() + shift * 60000).toISOString().slice(0, 10);
+  }
+
+
   function clockNote() {
     var here = -new Date().getTimezoneOffset();
     var there = day.utc_offset_minutes;

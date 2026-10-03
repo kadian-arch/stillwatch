@@ -24,6 +24,16 @@ SUITES = (
 
 SCRIPTS = (ROOT / "stillwatch" / "stillwatch" / "web" / "app.js",)
 PAGE = ROOT / "stillwatch" / "stillwatch" / "web" / "index.html"
+STYLE = ROOT / "stillwatch" / "stillwatch" / "web" / "style.css"
+
+# Every state is a word as well as a colour, and the word is small text on a
+# card. Four of these were below the readable threshold, the worst of them
+# being `alert` in the dark theme, which is the one word in this product that
+# has to be legible to somebody who has just woken up.
+TEXT_TOKENS = ("--faint", "--muted", "--normal", "--quiet", "--concern",
+               "--alert", "--away", "--settled", "--unknown")
+CARDS = {"light": "#ffffff", "dark": "#191b21"}
+READABLE = 4.5
 
 
 def check_scripts():
@@ -58,6 +68,65 @@ def check_element_ids():
     return 1 if missing else 0
 
 
+def _linear(value):
+    value /= 255.0
+    return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+
+
+def _luminance(colour):
+    red, green, blue = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+    return (0.2126 * _linear(red) + 0.7152 * _linear(green)
+            + 0.0722 * _linear(blue))
+
+
+def _contrast(one, two):
+    first, second = _luminance(one), _luminance(two)
+    high, low = max(first, second), min(first, second)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _palettes():
+    """The light block, then everything from the dark overrides onwards."""
+    css = STYLE.read_text(encoding="utf-8")
+    head, _, tail = css.partition("@media (prefers-color-scheme: dark)")
+    found = {}
+    for theme, block in (("light", head), ("dark", tail)):
+        found[theme] = {
+            name: value for name, value in
+            re.findall(r"(--[a-z-]+):\s*(#[0-9a-fA-F]{6})\s*;", block)
+        }
+    return found
+
+
+def check_palette():
+    """Every state word has to be readable on the card it sits on.
+
+    Colour is checked here rather than looked at, because four of these were
+    wrong on a page that had been stared at for weeks, and because the states
+    also have to stay apart from each other, which is not something an eye
+    judges reliably either.
+    """
+    palettes = _palettes()
+    failed = 0
+    for theme, card in CARDS.items():
+        palette = palettes.get(theme) or {}
+        for token in TEXT_TOKENS:
+            value = palette.get(token)
+            if value is None:
+                print("  FAIL  %s theme has no %s" % (theme, token))
+                failed += 1
+                continue
+            seen = _contrast(value, card)
+            if seen < READABLE:
+                print("  FAIL  %s %s is %s, %.2f against %s, needs %.1f"
+                      % (theme, token, value, seen, card, READABLE))
+                failed += 1
+    if not failed:
+        print("  pass  every state word reads at %.1f or better in both themes"
+              % READABLE)
+    return 1 if failed else 0
+
+
 def main():
     results = []
     for name, folder, script in SUITES:
@@ -70,6 +139,9 @@ def main():
 
     print("\n=== page wiring ===")
     results.append(("wiring", check_element_ids()))
+
+    print("\n=== colour ===")
+    results.append(("colour", check_palette()))
 
     print("\n%s" % ("-" * 40))
     failed = [name for name, code in results if code != 0]

@@ -59,9 +59,29 @@ cd stillwatch
 python -m stillwatch serve
 ```
 
-Open <http://127.0.0.1:8420>, pick a day, and press **Play the day**. Put
-*Collapse at home* beside *Out for the day* to see the two judged differently at
-the same moment.
+Open <http://127.0.0.1:8420>, pick a day, and press **Play**. Put *Collapse at
+home* beside *Out for the day* to see the two judged differently at the same
+moment.
+
+### Seeing it raise an alarm
+
+The recorded days replay an alarm but cannot be answered, because answering is
+something you do about today. To get a live household that is actually in
+trouble, and the buttons that go with it, build a collapse that happened
+yesterday morning and serve it as today:
+
+```bash
+cd ring-event-simulator
+python -m ringsim --scenario fall --days 40 --start 2026-08-24   --out fall.jsonl --manifest fall.json
+cd ../stillwatch
+python -m stillwatch ingest --events ../ring-event-simulator/fall.jsonl   --manifest ../ring-event-simulator/fall.json --db alarm.db
+STILLWATCH_TZ=Africa/Douala python -m stillwatch serve --live --db alarm.db   --person Margarette
+```
+
+`--start` is thirty nine days before the day the collapse should fall on, so
+the stream ends then. The dashboard opens on an alarm seventeen hours old,
+with *All is well*, *She was out*, *This is normal now* and *Dealt with* under
+it, and pressing one settles the episode and tells everybody else who went.
 
 Against real Ring events instead:
 
@@ -75,9 +95,13 @@ python -m stillwatch serve --live --db events.db --person Margarette
 python check.py
 ```
 
-Seven suites. The detection rules are tested against days that must alert and
+Twelve suites. The detection rules are tested against days that must alert and
 days that must not: a collapse, an outing of the same length, a lie in, a caller
-at an empty house, and a camera that dies while the person is fine.
+at an empty house, and a camera that dies while the person is fine. The rest
+cover the parts a test suite usually misses and this one did not: that every id
+the page script reaches for exists in the page, that the commands run from the
+folder they are actually run from, and that every state is readable as text in
+both themes.
 
 ## Ring integration
 
@@ -92,6 +116,11 @@ Ring's words are translated in exactly one place, which is why the same engine
 runs against the simulator and against real hardware without changing.
 
 ## Running it online
+
+It is online: **<https://stillwatch.tech>**
+
+The recorded days are open to anyone. The household itself is behind a sign in,
+because the dashboard says out loud when a real looking home is empty.
 
 Ring requires four HTTPS addresses that the integrator hosts, so Stillwatch has
 to be deployed before a real account can be linked.
