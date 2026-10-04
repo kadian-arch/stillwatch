@@ -178,7 +178,8 @@ is filling, every half hour. Motion on its own does not repair a gap: a day
 with movement in it but no sign of the cameras checking in still reads as a
 day nothing reported, because that is exactly what it looked like at the time.
 
-To repair a stretch that was missed entirely, name where to start:
+To repair a stretch that was missed entirely, name the day to start from, as
+`YYYY-MM-DD`:
 
 ```bash
 python feed.py --catch-up --since 2026-09-26

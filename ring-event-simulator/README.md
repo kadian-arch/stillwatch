@@ -1,5 +1,7 @@
 # ring-event-simulator
 
+[![tests](https://github.com/kadian-arch/ring-event-simulator/actions/workflows/tests.yml/badge.svg)](https://github.com/kadian-arch/ring-event-simulator/actions/workflows/tests.yml)
+
 Generates realistic Ring style event streams for a single person living alone,
 so that software which reacts to those events can be built and tested without
 a house, a camera, or API access.

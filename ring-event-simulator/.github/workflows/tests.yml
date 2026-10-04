@@ -1,0 +1,26 @@
+name: tests
+
+# Lives inside ring-event-simulator/ so that it does nothing in the repository
+# this is developed in, where GitHub only reads workflows at the root, and runs
+# on its own once the directory is split out into its own repository.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e .
+      - name: Run the suite
+        run: python tests/test_simulator.py

@@ -297,6 +297,75 @@ def test_the_headers_are_set():
           "max-age=31536000" in strict and "includeSubDomains" in strict, strict)
 
 
+def test_answering_the_alarm_the_dashboard_is_showing():
+    section("the button a caregiver actually presses")
+
+    # The two halves of this were tested apart: that the endpoint stores a
+    # name, and that a reading with an answer beside it becomes settled. What
+    # was never tested is that the episode id the dashboard hands back is the
+    # same string the endpoint will match against, which is the only reason
+    # pressing the button does anything at all.
+    from datetime import datetime, timedelta, timezone
+
+    inbox = Recorder()
+    store = EventStore(":memory:")
+    store.remember_devices([
+        Device("kitchen", "Kitchen", "interior"),
+        Device("front_door", "Front Door", "transit"),
+    ])
+
+    # A fortnight of somebody who moves every twenty minutes, around the clock,
+    # and then, today, stops. Deliberately not a realistic routine: a fixture
+    # with a quiet night in it makes this test pass by day and fail at three in
+    # the morning, depending on which hour the silence happens to begin in.
+    now = datetime.now(timezone.utc)
+    events = []
+    for day in range(14, 0, -1):
+        midnight = (now - timedelta(days=day)).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        for step in range(24 * 3):
+            events.append(Event("seed-%d-%d" % (day, step), "kitchen", MOTION,
+                                midnight + timedelta(minutes=20 * step)))
+    quiet_since = now - timedelta(hours=6)
+    events.append(Event("last", "kitchen", MOTION, quiet_since))
+    store.add_many(events)
+
+    source = CompositeSource(LiveSource(store, person="Margarette"),
+                             ReplaySource(DATA))
+    app = create_app(source, store=store, webhook_secret="hmac",
+                     environ={"STILLWATCH_PASSCODE": "open-sesame-2026",
+                              "STILLWATCH_SESSION_SECRET": "a-signing-key"},
+                     channels=[inbox])
+    client = app.test_client()
+    client.post("/api/session", json={"name": "Lucie",
+                                      "passcode": "open-sesame-2026"})
+
+    day = client.get("/api/day?scenario=live").get_json()
+    reading = (day.get("readings") or [])[-1]
+    check("six hours of silence is worth acting on",
+          reading["state"] in ("CONCERN", "ALERT"), reading["state"])
+
+    # Exactly what the page sends: the episode id it was given, untouched.
+    episode = reading["silence_began"]
+    check("the dashboard was given an episode to answer about", bool(episode))
+
+    reply = client.post("/api/answer", json={"episode": episode,
+                                             "outcome": "fine"})
+    check("the answer is accepted", reply.status_code == 200,
+          "%s %s" % (reply.status_code, reply.get_data(as_text=True)[:120]))
+    check("and the rest of the family are told once", len(inbox.notices) == 1,
+          str(len(inbox.notices)))
+
+    after = client.get("/api/day?scenario=live").get_json()
+    settled = (after.get("readings") or [])[-1]
+    check("the dashboard now reads as settled, which is the whole point",
+          settled["state"] == "SETTLED", settled["state"])
+    check("and says who went", "Lucie" in (settled.get("headline") or ""),
+          settled.get("headline"))
+
+    store.close()
+
+
 def main():
     source = ReplaySource(DATA)
     if not source.scenarios():
@@ -375,6 +444,7 @@ def main():
         test_the_day_knows_whether_it_is_today,
         test_a_day_outside_the_history_is_refused,
         test_health_does_not_leak_the_occupancy_record,
+        test_answering_the_alarm_the_dashboard_is_showing,
         test_the_headers_are_set,
     ):
         test()

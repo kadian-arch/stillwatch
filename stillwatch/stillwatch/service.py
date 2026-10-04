@@ -705,7 +705,7 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
             try:
                 on = date.fromisoformat(asked)
             except ValueError:
-                abort(400, description="on must be a date like 2026-09-25")
+                abort(400, description="on must be a date, written as YYYY-MM-DD")
             if on > local_date(datetime.now(timezone.utc)):
                 abort(400, description="that day has not happened yet")
             # A day before the house had any history is as meaningless as one

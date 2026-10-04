@@ -1,5 +1,7 @@
 # Stillwatch
 
+[![tests](https://github.com/kadian-arch/stillwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/kadian-arch/stillwatch/actions/workflows/ci.yml)
+
 **Watches for the silence.**
 
 Every home monitoring product alerts when something happens. For a person living
