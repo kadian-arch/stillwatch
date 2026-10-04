@@ -100,13 +100,43 @@ python -m stillwatch serve --live --db events.db --person Margarette
 python check.py
 ```
 
-Thirteen suites. The detection rules are tested against days that must alert and
-days that must not: a collapse, an outing of the same length, a lie in, a caller
-at an empty house, and a camera that dies while the person is fine. The rest
-cover the parts a test suite usually misses and this one did not: that every id
-the page script reaches for exists in the page, that the commands run from the
-folder they are actually run from, that the feed posts what it claims to post,
-and that every state is readable as text in both themes.
+Fourteen suites. The detection rules are judged against whole days that must
+alert and days that must not, every five minutes from midnight to midnight,
+because a false alarm that lasts five minutes still wakes somebody up.
+
+| The day | What it must decide | |
+|---|---|---|
+| Ordinary weeks | never alarms | pass |
+| Collapse at home | reaches an alarm | pass |
+| Out for the day, silent just as long | never alarms | pass |
+| A long lie in | never alarms | pass |
+| Caller at an empty house | never alarms | pass |
+| One camera drops out | never alarms | pass |
+
+The second and third rows are the product. The same length of silence, at the
+same hour, judged differently, because one of them has a door event in front of
+it and the other does not.
+
+Beyond the days, the suites cover what the delivery can do to a judgement, and
+the parts a test suite usually misses and this one did not:
+
+| Guarantee | |
+|---|---|
+| A day delivered backwards, and in twenty five shuffles, reads identically | pass |
+| The door event arriving last does not turn an outing into an alarm | pass |
+| A replayed delivery stores once, and cannot shorten a silence | pass |
+| An unsigned or wrongly signed delivery is refused and stores nothing | pass |
+| A forged session cookie is not a session | pass |
+| Nobody can answer for a household without signing in | pass |
+| The health endpoint does not say whether the house is occupied | pass |
+| Every id the page script reaches for exists in the page | pass |
+| Every state is readable as text in both themes | pass |
+| The commands run from the folder people actually run them from | pass |
+
+The delivery suite is there because order independence is a claim, and a claim
+about something that decides whether to wake a family at night should be
+demonstrated rather than asserted. Removing the one sort it depends on turns
+the outing into an alarm, which is what the suite exists to catch.
 
 ## Ring integration
 
@@ -119,6 +149,38 @@ and that every state is readable as text in both themes.
 
 Ring's words are translated in exactly one place, which is why the same engine
 runs against the simulator and against real hardware without changing.
+
+### What has run against Ring itself
+
+No Ring device is sold in Cameroon, so it is worth being exact about which
+parts have spoken to Ring's own servers and which have not. Anyone reading this
+repository should not have to guess.
+
+| | Ring's own API | Our feeder |
+|---|---|---|
+| OAuth token exchange | yes, Developers Playground token | n/a |
+| `GET /v1/devices`, real JSON:API envelope parsed | yes | n/a |
+| Device capabilities relationship | yes | n/a |
+| Event history endpoint | called; returns zero events for a sandbox device | fixtures |
+| Motion and doorbell events delivered to the webhook | **no. The Playground cannot fire one** | yes, signed with the real HMAC key |
+
+The gap in the last row is Ring's, not a shortcut here: the Developers
+Playground simulates a live view session, with the WHEP and SDP exchange for a
+video stream, and offers no way to make a motion or doorbell event arrive at a
+registered webhook. That is the only part of the API this product consumes.
+[docs/FRICTION_LOG.md](docs/FRICTION_LOG.md) entry 10 records it.
+
+So the event path is exercised by a feeder of our own that posts to the real
+endpoint, over HTTPS, with the real signing key, in Ring's own payload shape.
+Nothing downstream of the endpoint knows the difference, and nothing downstream
+is stubbed: the signature is checked, the envelope is unwrapped by
+`normalise_ring`, the store writes, the engine judges and the notice goes out
+through Amazon SNS. What is not proven by that is Ring's delivery behaviour
+itself, and no amount of local testing could prove it.
+
+The simulator does not stand in for the Ring integration. It feeds the same
+normalised event interface the Ring adapter produces, which is what lets the
+detection engine be tested independently of hardware nobody can buy here.
 
 ## Running it online
 

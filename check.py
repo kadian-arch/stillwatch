@@ -18,6 +18,7 @@ SUITES = (
     ("notify", ROOT / "stillwatch", "tests/test_notify.py"),
     ("service", ROOT / "stillwatch", "tests/test_service.py"),
     ("ring", ROOT / "stillwatch", "tests/test_ring.py"),
+    ("delivery", ROOT / "stillwatch", "tests/test_delivery.py"),
     ("narrate", ROOT / "stillwatch", "tests/test_narrate.py"),
     ("cli", ROOT / "stillwatch", "tests/test_cli.py"),
     ("feed", ROOT, "tests/test_feed.py"),
