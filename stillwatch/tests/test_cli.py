@@ -240,6 +240,40 @@ def test_it_asks_amazon_why_the_model_refuses():
           code == 0 and "Nothing is blocking" in out, out.strip()[:200])
 
 
+def test_history_can_be_landed_where_it_is_wanted():
+    section("putting a recorded history at a chosen distance from now")
+
+    from datetime import datetime, timedelta, timezone
+
+    from stillwatch.store import EventStore
+
+    with tempfile.TemporaryDirectory() as folder:
+        events = Path(folder) / "events.jsonl"
+        base = datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
+        lines = []
+        for n in range(4):
+            lines.append(
+                '{"event_id": "e%d", "device_id": "kitchen", "kind": "motion",'
+                ' "created_at": "%s"}' % (n, (base + timedelta(hours=n)).isoformat()))
+        events.write_text("\n".join(lines), encoding="utf-8")
+        db = str(Path(folder) / "shifted.db")
+
+        # Written because the alternative is a date in the README, and a date
+        # in a README is wrong by the following month.
+        code, out = run(["ingest", "--events", str(events), "--db", db,
+                         "--ends-ago", "17"])
+        check("it runs", code == 0, out.strip()[-200:])
+        check("and says where it put the history",
+              "ends 17h ago" in out, out.strip()[-200:])
+
+        store = EventStore(db)
+        last = store.last_event_at(kinds=("motion",))
+        store.close()
+        gap = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+        check("the last movement really is seventeen hours back",
+              16.9 < gap < 17.1, "%.2f hours" % gap)
+
+
 def test_the_watchdog_runs():
     section("the command that watches the watcher")
 
@@ -269,6 +303,7 @@ def main():
         test_it_reports_a_model_it_could_not_use,
         test_it_uses_a_model_it_could_reach,
         test_it_asks_amazon_why_the_model_refuses,
+        test_history_can_be_landed_where_it_is_wanted,
         test_the_watchdog_runs,
     ):
         test()

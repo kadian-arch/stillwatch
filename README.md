@@ -45,7 +45,7 @@ start. That distinction is the product.
 | Folder | What it is |
 |---|---|
 | [`stillwatch/`](stillwatch/) | The service: learner, monitor, notifications, dashboard, Ring adapter |
-| [`ring-event-simulator/`](ring-event-simulator/) | Standalone event simulator, MIT, also published on its own |
+| [`ring-event-simulator/`](ring-event-simulator/) | Standalone event simulator, MIT, published separately at [kadian-arch/ring-event-simulator](https://github.com/kadian-arch/ring-event-simulator) |
 | [`docs/`](docs/) | Design, the decisions behind it, deployment, and the developer friction log |
 | `check.py` | Runs every test suite |
 | `demo_data.py` | Generates the replay days |
@@ -65,23 +65,26 @@ moment.
 
 ### Seeing it raise an alarm
 
-The recorded days replay an alarm but cannot be answered, because answering is
-something you do about today. To get a live household that is actually in
-trouble, and the buttons that go with it, build a collapse that happened
-yesterday morning and serve it as today:
+A recorded day replays an alarm but cannot be answered, because answering is
+something you do about today. For a live household that is genuinely in
+trouble, build forty days ending in a collapse and land that collapse
+seventeen hours in the past:
 
 ```bash
 cd ring-event-simulator
-python -m ringsim --scenario fall --days 40 --start 2026-08-24   --out fall.jsonl --manifest manifest.json
+python -m ringsim --scenario fall --days 40 --out fall.jsonl --manifest manifest.json
 cd ../stillwatch
-python -m stillwatch ingest --events ../ring-event-simulator/fall.jsonl   --manifest ../ring-event-simulator/manifest.json --db alarm.db
-STILLWATCH_TZ=Africa/Douala python -m stillwatch serve --live --db alarm.db   --person Margarette
+python -m stillwatch ingest --db alarm.db --ends-ago 17 \
+  --events ../ring-event-simulator/fall.jsonl \
+  --manifest ../ring-event-simulator/manifest.json
+python -m stillwatch serve --live --db alarm.db --person Margarette
 ```
 
-`--start` is thirty nine days before the day the collapse should fall on, so
-the stream ends then. The dashboard opens on an alarm seventeen hours old,
-with *All is well*, *She was out*, *This is normal now* and *Dealt with* under
-it, and pressing one settles the episode and tells everybody else who went.
+`--ends-ago` shifts the whole history so it stops that many hours before now,
+which is what turns a recorded collapse into a silence long enough to act on.
+The dashboard opens on an alarm seventeen hours old with *All is well*, *She
+was out*, *This is normal now* and *Dealt with* underneath. Pressing one ends
+the episode and tells everybody else who went.
 
 Against real Ring events instead:
 
@@ -170,7 +173,7 @@ what stops it.
 | What is worth attacking here, and what stops it | [docs/SECURITY.md](docs/SECURITY.md) |
 | The Ring developer experience, written as it happened | [docs/FRICTION_LOG.md](docs/FRICTION_LOG.md) |
 | The considered view of every Amazon service used | [docs/PRODUCT_FEEDBACK.md](docs/PRODUCT_FEEDBACK.md) |
-| The event simulator the engine was built against | [ring-event-simulator/](ring-event-simulator/) |
+| The event simulator the engine was built against | [ring-event-simulator/](ring-event-simulator/), or [its own repository](https://github.com/kadian-arch/ring-event-simulator) |
 
 The friction log and the product feedback are written for the teams whose
 tools are used here. Each entry states what was attempted, what happened, how

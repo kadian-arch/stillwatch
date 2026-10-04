@@ -117,12 +117,18 @@ judgements should reach a phone.
 
 | When | Message | Urgency |
 |---|---|---|
-| Concern has held for 15 minutes | One per quiet spell | Low |
+| Concern has held for 15 minutes | One, for the whole stretch of quiet | Low |
 | Alert is reached | Straight away, even if the low one went | Urgent |
-| Alert continues | A reminder every hour | Urgent |
+| Alert continues | Chased at 1h, then 2h, 4h, 8h and 12h, and no more | Urgent |
+| Somebody answers from the dashboard | Who went, and what they found | Information |
 | She moves again, after anyone was told | All clear | Information |
 | Every camera inside goes offline | Once, saying we cannot see | Low |
 | Out, quiet, or normal | Nothing, ever | |
+
+The chasing stops after the fifth reminder. An unanswered alarm repeating
+hourly for two days is not urgency, it is noise, and the sixth identical
+message is read less carefully than the first. It keeps watching, and writes
+again the moment she moves.
 
 A low urgency message can wait a quarter of an hour to be sure; an urgent one
 never waits. Nothing counts as sent until a channel that reaches a person has
@@ -156,8 +162,11 @@ else, and what it returns is checked before anyone sees it:
 - Every number in the message must appear in the facts. A model that invents a
   time is refused.
 - A short list of words it may never use: alert, system, detected, monitoring,
-  anomaly, status, trigger.
+  anomaly, status, trigger, dear, regards.
 - Two sentences, no greeting, no sign off, no telling anyone how to feel.
+- Ordinary capital letters. A message that opens in lower case, or writes a
+  person's name without one, reads as though nobody checked it, and is refused
+  for that alone.
 - If the model is slow, silent, or refused, the engine's own sentence is sent
   instead and nothing is lost.
 
@@ -166,8 +175,10 @@ the engine's, and it stays exactly as the engine produced it.
 
 **The model makes the message human. It can never make it wrong.**
 
-Set `STILLWATCH_BEDROCK_MODEL_ID` to switch it on, and `AWS_REGION` alongside
-it. With nothing set, messages read exactly as they did before.
+Set `STILLWATCH_BEDROCK_MODEL_ID` to switch it on. It uses `AWS_REGION` unless
+`STILLWATCH_BEDROCK_REGION` names a different one, which is worth having
+because a region that carries a model is not necessarily a region an account
+may call it in. With nothing set, messages read exactly as they did before.
 
 ## Why not a neural network
 
@@ -233,13 +244,22 @@ Times are always the household's own clock, never the viewer's.
 python ../check.py
 ```
 
-Runs all five suites and checks the browser script parses. Individually:
+Runs every suite in the project, from here and from the repository root, and
+then three static checks: that the browser script parses, that every element id
+it reaches for exists in the page, and that every state is readable as text in
+both themes.
+
+The suites in this package can be run one at a time:
 
 ```bash
+python tests/test_clock.py
 python tests/test_rhythm.py
 python tests/test_monitor.py
 python tests/test_notify.py
 python tests/test_service.py
+python tests/test_ring.py
+python tests/test_narrate.py
+python tests/test_cli.py
 ```
 
 ## Working against real Ring data

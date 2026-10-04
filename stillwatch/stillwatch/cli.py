@@ -163,14 +163,22 @@ def cmd_ingest(args):
         store.remember_devices(list(load_roster(args.manifest)))
 
     shift = timedelta(0)
-    if args.end_now and events:
-        shift = datetime.now(timezone.utc) - events[-1].at
+    if (args.end_now or args.ends_ago is not None) and events:
+        # Where the history should finish, counted back from this moment. A
+        # recorded collapse is only interesting once some time has passed
+        # since it, and pinning that to a date in a document guarantees the
+        # document is wrong by next month.
+        ends = datetime.now(timezone.utc) - timedelta(hours=args.ends_ago or 0.0)
+        shift = ends - events[-1].at
         events = [replace(event, at=event.at + shift) for event in events]
 
     stored = store.add_many(events)
     print("read %d events, stored %d new ones in %s" % (len(events), stored, args.db))
     if shift:
-        print("  shifted forward by %s so the history ends now" % human_duration(shift.total_seconds()))
+        print("  moved by %s so the history ends %s"
+              % (human_duration(abs(shift.total_seconds())),
+                 "now" if not args.ends_ago
+                 else "%s ago" % human_duration(args.ends_ago * 3600.0)))
     print("  the store now holds %d events across %d devices"
           % (store.count(), len(store.roster())))
     store.close()
@@ -657,6 +665,11 @@ def build_parser():
     loader.add_argument("--db", default="events.db")
     loader.add_argument("--end-now", action="store_true", dest="end_now",
                         help="Shift the history so it ends at the present moment.")
+    loader.add_argument("--ends-ago", type=float, default=None, dest="ends_ago",
+                        metavar="HOURS",
+                        help="Shift the history so it ends this many hours ago. "
+                             "Use it to land a recorded collapse at a point where "
+                             "the silence has become worth acting on.")
     loader.set_defaults(handler=cmd_ingest)
 
     filler = commands.add_parser("backfill", help="Read past events from Ring into the store.")

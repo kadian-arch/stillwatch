@@ -100,7 +100,9 @@ origin and Google Fonts, and no inline script at all. `frame-ancestors 'none'`
 and `X-Frame-Options: DENY` prevent the page being framed, which rules out
 clickjacking of the answer buttons. `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: same-origin`, and a permissions policy disabling camera,
-microphone and location are set on every response. API responses are
+microphone and location are set on every response, as is
+`Strict-Transport-Security` for a year including subdomains, so that not even
+the first request of a session can be attempted in clear. API responses are
 `Cache-Control: no-store`.
 
 Every piece of text on the page is written as text content, never as markup, so
@@ -163,12 +165,13 @@ simulated household and exist to be looked at.
 
 ## Verification
 
-Twenty-seven checks in `stillwatch/tests/test_service.py` exercise this
-directly: that the household and the answer endpoint refuse an unauthenticated
+The checks in `stillwatch/tests/test_service.py` exercise this directly: that
+the household and the answer endpoint refuse an unauthenticated
 request, that the recorded days do not, that a token signed with the wrong key
 is rejected, that a token with no valid tag is rejected, that repeated wrong
 codes are throttled and a correct code offered while throttled is still
-refused, that an answer carries the name it was given under, and that the
-response headers above are present.
+refused, that an answer carries the name it was given under, that the response headers
+above are present, and that the open health endpoint never reports when
+anybody last moved.
 
 Run them with `python check.py`.

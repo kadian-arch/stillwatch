@@ -210,29 +210,28 @@ subscriber can filter.
 
 ## AWS account onboarding
 
-This is the one that cost the most, and it is worth saying because it affects
-who can build on AWS at all.
+**What happens.** AWS does not accept virtual cards, which is a documented and
+perfectly reasonable policy. The problem is when it is enforced. An account
+opened with one activates normally, accepts credits, and serves requests. The
+payment instrument is checked later, and when it fails every service on the
+account stops at once, including the ones the credits were granted for.
 
-A new account was created and verified, then suspended, because the payment
-method was a virtual card issued through a mobile money service. AWS does not
-accept virtual cards. That is a reasonable policy and it is documented. What
-was not reasonable was the sequence: the account activated, credits were
-redeemed against it, and only afterwards was the payment method rejected, at
-which point every AWS service became unavailable at once, including the ones
-the credits were granted for.
+**Why it matters more here than it looks.** In Cameroon, and in much of the
+region, a virtual card issued against a mobile money account is the ordinary
+way to pay for anything online. International bank cards are not something most
+people hold. So the instrument that is rejected is not an unusual choice, it is
+the normal one, and the check that rejects it arrives after the work has been
+done rather than before it starts.
 
-Support handled it well once a case was open. The reply was prompt, explained
-the policy clearly, named what would be accepted, and explicitly said there was
-no time pressure. That was genuinely good service.
+**What would change the most.** Validate the instrument when it is added. A
+developer told at sign-up that their card will not be accepted has lost five
+minutes. One told after building on the account has lost the account. The
+second outcome falls hardest on developers in the places where the credits
+would do the most good.
 
-**What would change the most.** Validate the payment instrument at the moment
-it is added, not after activation. Across much of Africa a virtual card on mobile
-money is the ordinary way to pay online, and an international bank card is not
-something most people can produce at short notice. Telling somebody at sign-up
-that their instrument will not be accepted is a minor inconvenience. Telling
-them after they have built on the account is the difference between shipping
-and not, and it selects against exactly the developers the credits exist to
-reach.
+Support was good throughout: prompt, clear about the policy, specific about
+what would be accepted, and explicit that there was no time pressure. The gap
+is in where the check sits, not in how it is handled once raised.
 
 ---
 

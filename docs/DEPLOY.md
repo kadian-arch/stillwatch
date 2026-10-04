@@ -298,6 +298,82 @@ all night to become interesting.
 Put the job back to `python feed.py --catch-up` afterwards and the next run
 fills the gap back in. To leave the gap where it was, add `--from-now`.
 
+## Every setting
+
+Everything the service reads from its environment, in one place. Nothing here
+has a default worth relying on except where one is given.
+
+### The home
+
+| Setting | Default | What it does |
+|---|---|---|
+| `STILLWATCH_PERSON` | `The household` | Whose home this is, used in every message |
+| `STILLWATCH_TZ` | UTC | The home's own timezone, for example `Africa/Douala`. Day boundaries and learned hours are read on this clock |
+| `STILLWATCH_NOTIFY` | off | `1` to judge the house on a timer and send messages. Without it the service only answers the dashboard |
+
+### Where events live
+
+| Setting | Default | What it does |
+|---|---|---|
+| `DATABASE_URL` | none | Postgres. Set by most platforms automatically, and the right choice for any deployment, because a container's disk is wiped on restart |
+| `STILLWATCH_DB` | `events.db` | A SQLite file, used only when there is no `DATABASE_URL` |
+
+### Ring
+
+| Setting | Default | What it does |
+|---|---|---|
+| `STILLWATCH_RING_CLIENT_ID` | none | From the Ring developer console |
+| `STILLWATCH_RING_CLIENT_SECRET` | none | From the same place, shown once |
+| `STILLWATCH_RING_WEBHOOK_SECRET` | none | The key deliveries are signed with. Without it `/ring/events` refuses everything |
+
+### Who may look
+
+| Setting | Default | What it does |
+|---|---|---|
+| `STILLWATCH_MEMBERS` | none | `Name:code, Name:code`. Each person signs in as themselves, and an answer carries their name |
+| `STILLWATCH_PASSCODE` | none | One code for the whole household, used only if `STILLWATCH_MEMBERS` is unset |
+| `STILLWATCH_SESSION_SECRET` | derived | Signs session cookies. Left unset, a key is derived from the webhook secret. Changing it signs everybody out |
+
+With neither code set the household is open to anyone who knows the address,
+and the page says so in a panel at the top of itself.
+
+### Messages
+
+| Setting | Default | What it does |
+|---|---|---|
+| `STILLWATCH_SNS_TOPIC_ARN` | none | The Amazon SNS topic to publish to. Caregivers subscribe themselves, so no address is ever stored here |
+| `AWS_REGION` | none | Where the topic is. `AWS_DEFAULT_REGION` is read as a fallback |
+| `STILLWATCH_SNS_ENDPOINT` | none | Point SNS somewhere else, for LocalStack |
+| `STILLWATCH_NOTICE_CONSOLE` | off | `1` to print every message to the log as well |
+| `STILLWATCH_NOTICE_LOG` | none | A file to append every message to, which doubles as the sent log |
+
+The SMTP channel below is a fallback for a deployment that cannot use SNS. It
+holds caregivers' addresses in configuration, which SNS does not, so prefer SNS
+wherever it is available.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `STILLWATCH_SMTP_HOST` | none | Turns the email channel on |
+| `STILLWATCH_SMTP_PORT` | `587` | |
+| `STILLWATCH_SMTP_USER` | none | |
+| `STILLWATCH_SMTP_PASSWORD` | none | |
+| `STILLWATCH_EMAIL_TO` | none | Comma separated. Required alongside the host |
+| `STILLWATCH_EMAIL_FROM` | the SMTP user | |
+
+### The wording
+
+| Setting | Default | What it does |
+|---|---|---|
+| `STILLWATCH_BEDROCK_MODEL_ID` | none | A model to write the opening sentence, for example `amazon.nova-lite-v1:0`. Unset, every message is the engine's own words |
+| `STILLWATCH_BEDROCK_REGION` | `AWS_REGION` | Where to call the model, when that is not where the topic lives |
+
+### The recorded days, and the feed
+
+| Setting | Default | What it does |
+|---|---|---|
+| `STILLWATCH_DEMO_DATA` | none | A folder for the recorded days, built on first start if empty |
+| `STILLWATCH_FEED_URL` | `http://127.0.0.1:8420/ring/events` | Where `feed.py` posts. Set it when the feed runs anywhere other than the machine serving the dashboard |
+
 ## Checking it works
 
 ```

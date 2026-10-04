@@ -162,8 +162,9 @@ contact list here to leak.
 Ring SDK, and the sandbox will not emit events on demand, so a standalone
 generator of realistic multi-week histories was the only way to develop and
 test an engine that reasons about weeks. It lives in
-[ring-event-simulator/](../ring-event-simulator/) with its own tests and
-licence, and is useful to anyone else building on the Ring API.
+[ring-event-simulator/](../ring-event-simulator/) here and separately at
+[kadian-arch/ring-event-simulator](https://github.com/kadian-arch/ring-event-simulator), under MIT, with its own tests, and is
+useful to anyone else building on the Ring API.
 
 ## What it does, and what it does not
 

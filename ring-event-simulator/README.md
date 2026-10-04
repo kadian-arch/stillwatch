@@ -35,11 +35,22 @@ python -m ringsim --scenario away --days 21 --out events.jsonl --manifest manife
 Output is JSON Lines, one event per line:
 
 ```json
-{"event_id": "evt_000412", "device_id": "kitchen", "device_name": "Kitchen", "kind": "motion", "created_at": "2026-09-20T07:41:09.118371+00:00", "source": "simulator"}
+{"event_id": "evt_42540465b136a1f57bb6", "device_id": "landing", "device_name": "Landing", "kind": "motion", "created_at": "2026-10-03T07:34:05.278381+00:00", "source": "simulator"}
 ```
 
 Every record carries `"source": "simulator"`, so simulated events can never be
 mistaken for real ones further down a pipeline.
+
+**Event ids are derived from the event, not counted.** The id is a hash of the
+timestamp, the device and the kind, so the same event always has the same id no
+matter how many times or in how many runs it is generated. That makes
+ingestion idempotent for free: a consumer that refuses a duplicate id will
+refuse a genuine redelivery and accept everything else.
+
+This was not the first design. Ids used to be a counter that restarted at one
+on every run, which meant two overlapping runs produced different events
+sharing the ids `evt_000001` upwards. A consumer deduplicating on the id then
+silently discarded almost everything it was sent.
 
 As a library:
 
@@ -92,14 +103,20 @@ Seeded throughout, so a given seed always produces the same stream.
 
 ## Devices
 
-| Device | Class | Sees |
+| Device | Class | Covers |
 |---|---|---|
 | `front_door` | transit | entry, and doorbell presses |
 | `back_door` | transit | back entry |
 | `hallway` | interior | hallway |
 | `kitchen` | interior | kitchen |
 | `living_room` | interior | living room |
-| `landing` | interior | bathroom, bedroom |
+| `landing` | interior | bedroom, bathroom |
+| `bedroom_door` | interior | bedroom |
+| `bathroom_door` | interior | bathroom |
+
+More than one device can cover the same zone, which is deliberate: a real home
+has overlapping coverage, and software that assumes one camera per room breaks
+on contact with it.
 
 The transit and interior split is what makes absence detectable. Devices near a
 door see someone leaving; devices inside see someone living.
@@ -118,8 +135,8 @@ adapter makes that a small change.
 python tests/test_simulator.py
 ```
 
-Forty checks covering ordering, determinism, cooldown, and the behaviour each
-scenario promises.
+Forty one checks covering ordering, determinism, cooldown, the stability of
+event ids across runs, and the behaviour each scenario promises.
 
 ## Licence
 
