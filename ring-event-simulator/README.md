@@ -1,6 +1,9 @@
 # ring-event-simulator
 
 [![tests](https://github.com/kadian-arch/ring-event-simulator/actions/workflows/tests.yml/badge.svg)](https://github.com/kadian-arch/ring-event-simulator/actions/workflows/tests.yml)
+[![python](https://img.shields.io/badge/python-3.10%20to%203.13-blue)](pyproject.toml)
+[![licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
+[![no dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)](pyproject.toml)
 
 Generates realistic Ring style event streams for a single person living alone,
 so that software which reacts to those events can be built and tested without
@@ -140,6 +143,11 @@ python tests/test_simulator.py
 Forty one checks covering ordering, determinism, cooldown, the stability of
 event ids across runs, and the behaviour each scenario promises.
 
+## Contributing
+
+The most useful contribution is a day this cannot yet produce. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for what is wanted and what must stay true.
+
 ## Licence
 
-MIT.
+MIT. See [LICENSE](LICENSE).

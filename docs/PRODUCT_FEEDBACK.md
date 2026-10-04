@@ -77,6 +77,29 @@ appear once at app creation and can never be retrieved. The documented remedy
 for a leaked secret is to delete the app, which is not a workable answer for a
 live integration.
 
+### Onboarding, from zero to a working call
+
+Four days, almost none of it writing code.
+
+Identity verification came first and gave no reason when it failed, which cost
+two of three attempts. Then account linking required four public HTTPS
+addresses before a single call could be made, so a host had to be chosen, paid
+for and deployed with a certificate before hello world was even possible. The
+first genuinely successful call came through the Developers Playground, which
+issues a short-lived token and needs none of that, and which should be the
+first thing a new developer is pointed at rather than something found later.
+
+### Would you build on it again?
+
+**Yes.** The parts that are hard to get right are right: the webhook signature
+is real HMAC-SHA256 over the raw body, the envelope is consistent, and narrow
+scopes are respected rather than quietly widened. Those are the things that are
+painful to work around when a platform gets them wrong, and none of them needed
+working around.
+
+The reservation is entirely about the path in. Every problem below is in
+getting to the first working call, not in the API once you are there.
+
 ### What would change the most
 
 1. A `type` or `family` field on a device, or a doorbell entry in capabilities.
@@ -92,8 +115,13 @@ live integration.
 **Used for:** registration, identity verification, app creation and account
 linking.
 
-Identity verification gates the entire platform and gives no reason when it
-fails. The rule that matters, that the legal name on the Company Profile must
+**What is good.** Once past verification, the console is quick and
+unambiguous. Creating an app, setting the four URLs and reading back the
+credentials are each one screen with no hunting, and the signing key is
+presented clearly enough that nobody could mistake what it is for.
+
+**What needs work.** Identity verification gates the entire platform and gives
+no reason when it fails. The rule that matters, that the legal name on the Company Profile must
 match the identity document exactly, is documented on a different page from the
 upload screen. One of three attempts was spent discovering it.
 
@@ -102,6 +130,13 @@ Account linking requires four HTTPS URLs that the partner hosts, and rejects
 service before they can write a line of working integration code. We built the
 entire engine against a simulator first, which turned out well, but it was
 forced rather than chosen.
+
+**Onboarding.** This is where the four days went. Identity verification is
+the first gate and the least explained one.
+
+**Would you use it again? Yes,** because there is no alternative, and because
+once past verification the console does its job without fuss. The gate itself
+is the problem, not the tool.
 
 **What would change the most:** state the name-matching rule on the upload
 screen, say which check failed, and accept a `localhost` callback for an app
@@ -166,6 +201,16 @@ minimum the region and the failing precondition in the message text. Second,
 since a model reported AVAILABLE and AUTHORIZED in a region that will not serve
 it is worse than no answer, because it is believed.
 
+**Onboarding, from zero to a written sentence.** Ten minutes of code and the
+better part of a day of diagnosis. Naming a model in the environment is the
+whole integration, and the first call failed with a sentence that named neither
+the model nor the reason. Everything slow about it is described above.
+
+**Would you build with it again? Yes.** `converse` is the right shape, the same
+call works across model families, and swapping models is one environment
+variable. For a product that needs one good sentence rather than a conversation,
+it is well matched and costs a few pennies a month.
+
 **A smaller one: a model has two names.** `amazon.nova-lite-v1:0` and the
 cross region inference profile `us.amazon.nova-lite-v1:0` are the same model,
 and which one an account may use varies. Some models refuse the plain id and
@@ -200,15 +245,37 @@ every notification the service sends. The SMTP channel it replaced has been
 removed, along with the credential it needed, which is the point: with SNS
 there is no contact detail and no mail password anywhere in the deployment.
 
+**Onboarding, from zero to a delivered message.** About twenty minutes, and
+most of that was confirming subscriptions by email. Creating a topic,
+subscribing and publishing are each one step, and the first real message
+arrived on the first attempt once the credentials were right.
+
+**Would you build with it again? Yes, without hesitation.** It removed an
+entire class of problem rather than solving one: with subscribers owning their
+own subscriptions there is no contact list in this product to store, leak or
+keep up to date, and the SMTP password it replaced is gone.
+
 **What is good as a design fit.** Publish-and-subscribe is exactly right for
 this product. A household can add a second daughter without the application
 storing a single new personal detail, and unsubscribing is the subscriber's
 own to do. Message attributes let urgency ride along with the message so a
 subscriber can filter.
 
+**What needs work.** The console asks for a topic *name* when you create one
+and the SDK wants a topic *ARN* when you publish, and nothing on the creation
+screen says that the ARN is the thing you will need or where to find it
+afterwards. It is a small thing that costs a first-time user a detour through
+the documentation at exactly the moment they expect to be finished.
+
+Subscription confirmation is also silent about its own expiry. A confirmation
+link that is left for a few days stops working, and the subscription sits in
+the console looking almost indistinguishable from a confirmed one. For a
+product where an unconfirmed subscriber means a caregiver who will never be
+told, that distinction deserves to be louder than a column of small text.
+
 ---
 
-## AWS account onboarding
+## AWS account onboarding, which is not a tool but shaped everything
 
 **What happens.** AWS does not accept virtual cards, which is a documented and
 perfectly reasonable policy. The problem is when it is enforced. An account

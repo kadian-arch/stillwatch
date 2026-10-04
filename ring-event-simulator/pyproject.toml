@@ -16,9 +16,20 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Testing",
+    "Topic :: Home Automation",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/kadian-arch/ring-event-simulator"
+Repository = "https://github.com/kadian-arch/ring-event-simulator"
+Issues = "https://github.com/kadian-arch/ring-event-simulator/issues"
+Changelog = "https://github.com/kadian-arch/ring-event-simulator/blob/main/CHANGELOG.md"
 
 [project.scripts]
 ringsim = "ringsim.cli:main"

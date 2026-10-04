@@ -119,6 +119,9 @@ as the two participants, showing each request and who makes it.
 
 **Task.** Call the API.
 
+**Expected.** An official client library, or at least a published OpenAPI
+description to generate one from, as most platforms of this size provide.
+
 **What happened.** Everything is plain HTTP: the OAuth exchange, the token
 refresh, the event history call, the webhook signature check. All of it is
 straightforward, and all of it is the same work for every developer who ever
@@ -138,6 +141,9 @@ developers generate their own.
 ## 5. Webhook payload shapes are left open
 
 **Task.** Parse an incoming event.
+
+**Expected.** A complete example payload for each event type, so a parser could
+be written against the exact shape the platform sends.
 
 **What happened.** The documentation names the event types precisely
 (`motion_detected`, `button_press`, `device_online`, `device_offline`) and
@@ -203,6 +209,9 @@ cursor or by link.
 
 **Task.** Decide whether the project was possible without owning a Ring device.
 
+**Expected.** A single clear statement of what can be built and tested with no
+hardware.
+
 **What happened.** One page implies physical hardware is needed to develop and
 test. Another describes a sandbox with synthetic devices and events, and the
 release notes describe a Playground that needs no app, no account linking and
@@ -211,6 +220,10 @@ excellent news, but it took a while to be certain of it.
 
 **Severity.** Low. Time spent reading rather than building, and a period of
 genuine doubt about whether to attempt the track at all.
+
+**Workaround.** Read the release notes alongside the guides and trust the most
+recent page, then confirm by obtaining a Playground token and calling the API
+without any device registered.
 
 **What would have helped.** A line on the Get Started page saying plainly what
 can be done with no hardware. For developers in countries where Ring devices
@@ -310,6 +323,10 @@ is not a workable answer.
 
 **Task.** Verify our client against the real API without owning hardware.
 
+**Expected.** A sandbox that can deliver a motion or doorbell event to a
+registered webhook, since that is the part of the API an events-driven
+integration consumes.
+
 **What happened.** The Developers Playground is genuinely useful and we used
 it. It issues a short-lived OAuth token, and its API explorer let us confirm
 that our own client authenticates against `api.amazonvision.com`, calls
@@ -341,6 +358,9 @@ feature would be worth more than the whole live view simulator.
 ## 11. The staging path assumes every developer owns hardware
 
 **Task.** Receive real events during development.
+
+**Expected.** A route to real events that does not begin with buying a
+doorbell, given that the Playground already issues tokens without one.
 
 **What happened.** Account linking offers up to ten staging users, each of whom
 authorises a real Ring account. A real account with no devices produces no

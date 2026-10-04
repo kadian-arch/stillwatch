@@ -321,8 +321,21 @@
     });
   }
 
+  function asSentence(text) {
+    text = String(text || "").trim();
+    if (!text) { return text; }
+    text = text.charAt(0).toUpperCase() + text.slice(1);
+    return /[.!?]$/.test(text) ? text : text + ".";
+  }
+
+
   function fail(message) {
     ui.app.setAttribute("aria-busy", "false");
+    // The opening line is a placeholder for the moment before any data has
+    // arrived. If none is coming, it must not sit there claiming to be
+    // reading something.
+    ui.statement.textContent = "";
+    ui.stateWord.textContent = "";
     ui.empty.hidden = false;
     ui.empty.textContent = message;
   }
@@ -474,7 +487,18 @@
           showGate("Sign in to see this household.");
           throw new Error("locked");
         }
-        if (!reply.ok) { throw new Error("no day"); }
+        if (!reply.ok) {
+          // The service says why in the body. Throwing that away and
+          // reporting "could not load" turns a clear answer about this
+          // household, such as asking for a day before it had any history,
+          // into something that reads like a broken website.
+          return reply.json().then(null, function () { return {}; })
+            .then(function (body) {
+              var stop = new Error(body.error || "no day");
+              stop.explained = Boolean(body.error);
+              throw stop;
+            });
+        }
         return reply.json();
       })
       .then(function (bundle) {
@@ -491,7 +515,9 @@
           ui.app.setAttribute("aria-busy", "false");
           return;
         }
-        fail("Could not load that day.");
+        fail(error && error.explained
+          ? asSentence(error.message)
+          : "Could not load that day.");
       });
   }
 
