@@ -21,19 +21,24 @@ Devices are classified as **transit**, near a door, or **interior**, inside the
 house. A stretch of interior silence that opens with a transit event is someone
 leaving. The same stretch with no transit event is someone who stopped.
 
-## What has been built
+## The parts
 
-| Part | State |
-|---|---|
-| Event and device model, outage tracking | done |
-| Rhythm learner | done |
-| Silence monitor and state ladder | done |
-| Dashboard | done |
-| Notifications, with Amazon SNS delivery | done, first live send when AWS credits land |
-| Event store, SQLite or Postgres | done |
-| Ring adapter, webhook and account linking | done, awaiting a deployed HTTPS address |
-| History backfill on first link | done |
-| Bedrock writing the message a family reads | done |
+Events arrive over a signed webhook, or are pulled in bulk when a Ring account
+is first linked, and land in a store that speaks SQLite on a laptop and
+Postgres in a deployment. A camera is either on the way out of the house or
+inside a room, and the difference is what lets leaving be told from stopping.
+
+From a household's own weeks the learner draws two things: how often each
+camera sees that person at each hour of each kind of day, and how long they
+normally stay still once they have settled at that hour. The monitor compares
+the present against both and places it on a ladder. The dashboard shows the
+ladder, the reasoning underneath it, and the day laid out camera by camera.
+
+When a message is warranted, Amazon Bedrock writes its opening sentence and
+Amazon SNS delivers it to whoever has subscribed. Neither is on the path
+between noticing a silence and telling somebody: the engine decides, and the
+engine's own sentence is used whenever the model is unreachable or writes
+something the validator refuses.
 
 ## The learner
 
@@ -208,12 +213,13 @@ python -m stillwatch serve
 
 Then open http://127.0.0.1:8420.
 
-Pick a scenario, press Play the day, and watch the judgement change as the day
-unfolds. Choose a second scenario under Side by side to compare two days at the
-same moment: the collapse against the outing is the one that matters. The
-address bar keeps the scenario and the time, so a link opens on the same frame.
+Pick a day and press Play, and the judgement changes as the day unfolds. Put
+*Collapse at home* next to *Out for the day*: the same silence, read two
+different ways, is the whole idea.
 
-Space plays and pauses. The arrow keys step five minutes, or an hour with Shift.
+The address bar carries the day and the moment, so a link opens on the frame
+you were looking at. Space plays and pauses, and the arrow keys step five
+minutes at a time, or an hour with Shift held, without needing the slider.
 
 The page shows one sentence first, set as a note rather than a system message,
 because that sentence is the product. Everything under it exists to back it up:

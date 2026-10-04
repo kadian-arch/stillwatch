@@ -463,6 +463,61 @@ def test_reasons_read_like_written_english():
     check("an empty string is left alone", sentence("") == "")
 
 
+def test_an_ordinary_day_is_never_worth_a_phone_call():
+    section("nothing wrong at all")
+
+    # Every other scenario had a test and this one did not, which is the wrong
+    # way round. A product that telephones a family about their mother is
+    # judged first on the days she is perfectly fine, and those are almost all
+    # the days there are. One missed collapse is a failure. One false alarm a
+    # month is the reason the product gets switched off.
+    stream, baseline, target, meta = prepared("normal")
+    people = roster()
+
+    readings = walk(stream, baseline, people, at(target, 0), at(target, 23, 59), 10)
+    alerts = [r.at.strftime("%H:%M") for r in readings if r.state == ALERT]
+    concerns = [r.at.strftime("%H:%M") for r in readings if r.state == CONCERN]
+
+    check("an ordinary day never asks anybody to go and check",
+          not alerts, "%d: %s" % (len(alerts), ", ".join(alerts[:6])))
+    check("and never even says it is worried",
+          not concerns, "%d: %s" % (len(concerns), ", ".join(concerns[:6])))
+
+    # Silent is not the same as asleep.
+    midday = assess(stream, baseline, people, at(target, 12))
+    check("while still judging, rather than quiet because it gave up",
+          midday.state in (NORMAL, QUIET, AWAY), midday.state)
+    check("and able to say why it is not worried", bool(midday.reasons))
+
+
+def test_how_often_an_ordinary_day_cries_wolf():
+    section("the same ordinary day, six different households")
+
+    # One household proves nothing about the rule. These are six, each with
+    # its own routine, each judged on its ordinary day by a baseline that has
+    # not seen that day, which is what the deployed service does.
+    #
+    # Five are silent. One is not, and that is recorded here rather than
+    # tuned away, because the number that matters is how often this happens
+    # across households and it cannot be learned from the one that passes.
+    from ringsim import Simulator
+    from ringsim.scenarios import SCENARIOS
+
+    people = roster()
+    noisy = []
+    for seed in (3, 7, 11, 19, 23, 31):
+        events, meta = SCENARIOS["normal"].build(Simulator(seed=seed), START, DAYS)
+        stream = [normalise(event.to_record()) for event in events]
+        day = date.fromisoformat(meta["target_day"])
+        learned = learn(stream, roster(), until=at(day, 0))
+        readings = walk(stream, learned, people, at(day, 0), at(day, 23, 59), 10)
+        if any(r.state == ALERT for r in readings):
+            noisy.append(seed)
+
+    check("at most one household in six is alarmed on an ordinary day",
+          len(noisy) <= 1, "%d of 6 were: %s" % (len(noisy), noisy))
+
+
 def main():
     for test in (
         test_expectations_hold,
@@ -482,6 +537,8 @@ def main():
         test_an_unanswered_doorbell_is_worth_saying,
         test_a_time_says_which_day_it_belongs_to,
         test_ladder_helpers,
+        test_an_ordinary_day_is_never_worth_a_phone_call,
+        test_how_often_an_ordinary_day_cries_wolf,
         test_reasons_read_like_written_english,
     ):
         test()

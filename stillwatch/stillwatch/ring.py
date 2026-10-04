@@ -340,6 +340,3 @@ class RingClient:
             url = following
         events.sort(key=lambda event: event.at)
         return events
-
-    def subscriptions(self):
-        return self._json("%s/accounts/me/subscriptions" % API_BASE, self.token())

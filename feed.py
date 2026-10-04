@@ -208,6 +208,14 @@ def main():
     parser.add_argument("--since", default="",
                         help="Catch up from this date instead of the last stored event, "
                              "as YYYY-MM-DD. For repairing a stretch the feed missed.")
+    parser.add_argument("--still", action="store_true",
+                        help="Post the camera reports but no movement, so the house "
+                             "goes quiet while the cameras stay online. This is the "
+                             "difference the product exists to tell: an unreachable "
+                             "camera is not a person who has stopped moving.")
+    parser.add_argument("--from-now", action="store_true",
+                        help="Catch up from this moment rather than from the last "
+                             "movement, leaving the gap as the gap it was.")
     parser.add_argument("--clean", action="store_true",
                         help="Deliver exactly once and in order, which no real webhook does.")
     args = parser.parse_args()
@@ -236,6 +244,22 @@ def main():
         # and nothing would ever be generated again.
         last = EventStore(args.db).last_event_at(kinds=("motion", "ding"))
         now = datetime.now(timezone.utc)
+
+        if args.still:
+            # Only the cameras speak. Nobody moves. The dashboard has every
+            # reason to believe the house is being watched, which is the whole
+            # point: a silence it can trust is the one worth acting on.
+            from_moment = last or (now - timedelta(hours=1))
+            sent = heartbeats(args.url, secret, from_moment, now)
+            print("\nthe cameras are reporting and nobody is moving")
+            print("  %d camera reports sent across %s to %s"
+                  % (sent, from_moment.strftime("%d %b %H:%M"),
+                     now.strftime("%d %b %H:%M")))
+            print("  movement withheld, so the quiet is real as far as the house knows")
+            return 0
+
+        if args.from_now:
+            last = now
 
         if args.since:
             # Repairing a stretch the feed missed. Everything in it is posted

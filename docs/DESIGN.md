@@ -95,15 +95,20 @@ Alerting is a ladder, not a switch.
 | CONCERN | Silence well past normal, no transit event to explain it | Notify, low urgency |
 | ALERT | Concern sustained, or a missed anchor on top | Notify, urgent |
 | AWAY | Transit event then sustained silence | Suppressed, shown as away |
+| SETTLED | Somebody has been round and said what they found | Stops, and tells the others who went |
+| UNKNOWN | Nothing has reported, so nothing can be judged | Says so, and never guesses |
 
-Two properties that matter: it can go back down, and AWAY suppresses the ladder
+Three properties that matter. It can go back down. AWAY suppresses the ladder
 entirely rather than silencing it, so the dashboard still shows what it thinks.
+And SETTLED is the only thing other than movement that ends an episode, because
+a daughter who has already telephoned and found her mother well needs a way to
+say so that stops everybody else being asked.
 
 ## Architecture
 
 ```
 Ring API  ───┐
-             ├──> ingest ──> event store (SQLite) ──> rhythm learner
+             ├──> ingest ──> event store ──> rhythm learner
 simulator ───┘       ^                                      |
                      |                                      v
               webhook receiver                       silence monitor
@@ -116,9 +121,15 @@ simulator ───┘       ^                                      |
                                           dashboard            notifications
 ```
 
-**Stack:** Python and Flask for the service, SQLite for events, plain HTML, CSS
-and JS for the dashboard with no build step. No official Ring SDK exists, so
-API calls are plain HTTP.
+**Stack:** Python and Flask for the service, plain HTML, CSS and JS for the
+dashboard with no build step. No official Ring SDK exists, so API calls are
+plain HTTP.
+
+The event store speaks SQLite and Postgres through one small dialect seam: the
+parameter placeholder and how a connection is opened are the only things that
+differ, and every statement is written so both understand it. SQLite is for
+running it on a laptop. Deployed, it is Postgres, because a container's disk is
+wiped on every restart and a baseline needs weeks of history.
 
 **The simulator is built first.** It emits events in Ring's documented shape:
 motion, doorbell press, device online and offline, with timestamps and device
@@ -128,52 +139,54 @@ lands, the source swaps and the engine does not change.
 This is the same reason FairGlass had a mock proof mode. Nothing downstream
 should ever be blocked on an external dependency we do not control.
 
-## Mini challenges, both earned rather than bolted on
+## Where Amazon's services sit, and where they do not
 
-**AWS Builder.** Two natural fits. Bedrock turns the anomaly signals into a
-sentence a caregiver can read at a glance instead of a table of gap
-percentiles. SNS delivers the notification to a phone. Both are documented
-integrations doing real work.
+**Amazon Bedrock** writes the opening sentence of a message, turning the
+reasoning into something a person reads at a glance rather than a table of gap
+percentiles. It is given the facts and nothing else, and what comes back is
+checked before anyone sees it: too long, more than one paragraph, a word the
+product does not use, a number that is not in the facts, or a sentence that
+reads as though nobody proofread it, and the engine's own sentence goes
+instead.
 
-**Open Source.** The simulator is the contribution. There is no official Ring
-SDK and the sandbox is limited, so a standalone event simulator is genuinely
-useful to anyone else building on the Ring API. It ships as its own repo with a
-licence. The thing we build to unblock ourselves becomes the entry.
+It is deliberately not on the path between seeing a silence and telling
+somebody about it. A model that is slow, unreachable or simply wrong costs a
+message its tone and none of its facts.
 
-## Scope
+**Amazon SNS** delivers it. Caregivers subscribe themselves to the topic, so
+Stillwatch publishes to one address and never holds a phone number or an email
+for anybody. That is a privacy property, not a convenience: there is no
+contact list here to leak.
 
-**Must ship.**
+**The simulator** is why any of the rest could be built. There is no official
+Ring SDK, and the sandbox will not emit events on demand, so a standalone
+generator of realistic multi-week histories was the only way to develop and
+test an engine that reasons about weeks. It lives in
+[ring-event-simulator/](../ring-event-simulator/) with its own tests and
+licence, and is useful to anyone else building on the Ring API.
 
-- Event ingestion: webhook receiver plus history backfill
-- Simulator producing realistic multi-week histories
-- Rhythm learner: per-device, per-daytype, per-hour baselines
-- Transit and interior classification, away detection
-- Silence monitor and the state ladder
-- Dashboard showing learned rhythm, current state, and the reasoning
-- Test suite covering the detection logic, including the false positive cases
+## What it does, and what it does not
 
-**Stretch, only once the above is solid.**
+It ingests events over a signed webhook and backfills history on first link.
+It learns a household's rhythm per device, per kind of day, per hour. It tells
+a camera on the way out from a camera inside a room, and uses the difference to
+tell leaving from stopping. It judges the present on a ladder, shows the
+reasoning on a dashboard, writes the message, and delivers it. Its detection
+rules are tested against days that must raise an alarm and days that must not.
 
-- Bedrock alert narration
-- SNS delivery
-- Multiple monitored people
+**One household at a time.** A deployment watches one person. Nothing in the
+model prevents more, but nothing has been built for it either.
 
-**Explicitly out.**
+**It watches a house, not a person.** A camera cannot tell who walked past it,
+so a home with two people in it is outside what this can judge. Where two rooms
+move within seconds of each other it says so on the day rather than quietly
+judging the wrong one, and it learns which cameras watch the way between rooms
+so that one person stepping through a door is not mistaken for two.
 
-- Video or image analysis. The whole point is that we do not need to watch
-  anyone to know they are alright, which is also a privacy argument worth
-  making.
-- Mobile app. The dashboard is responsive and that is enough.
+**No video, no images, ever.** It reads only that movement was seen and when.
+That is the reason it cannot tell somebody who has fallen from somebody who is
+reading quietly, and it is also the reason it can be pointed at a parent's home
+without anybody feeling watched. The second is worth more than the first.
 
-## The demo, under 3 minutes
-
-1. Margarette's learned week. This is what her normal looks like.
-2. Today, no kitchen activity by 09:00. She is normally up by 07:30.
-3. The ladder moves QUIET to CONCERN, and states its reasoning.
-4. The front door has not opened. She is home, not out.
-5. Alert, with the sentence a caregiver actually reads.
-6. Then the contrast: same silence, but the door opened at 08:10. AWAY.
-   No alert. This is the part that makes it a product rather than a timer.
-
-Beat 6 is the one that wins or loses the video, so it goes in even if something
-else gets cut.
+**No mobile application.** The dashboard is responsive, and the thing that
+matters arrives as a message anyway.

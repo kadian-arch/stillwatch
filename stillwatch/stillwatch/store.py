@@ -130,10 +130,56 @@ class EventStore:
     def _sql(self, statement):
         return statement.replace("?", self.dialect.placeholder)
 
-    def _execute(self, statement, values=()):
-        cursor = self._db.cursor()
-        cursor.execute(self._sql(statement), values)
-        return cursor
+    def _recover(self):
+        """Leave the connection usable again, reopening it if it has gone.
+
+        True means the connection was replaced and the statement may be worth
+        trying once more. False means the connection is alive and the
+        statement itself was the problem, which repeating would not fix.
+        """
+        try:
+            self._db.rollback()
+            return False
+        except Exception:
+            pass
+        try:
+            self._db.close()
+        except Exception:
+            pass
+        try:
+            self._db = self.dialect.connect(self.target)
+            for statement in STATEMENTS:
+                cursor = self._db.cursor()
+                cursor.execute(self._sql(statement), ())
+                cursor.close()
+            self._db.commit()
+            return True
+        except Exception:
+            return False
+
+    def _execute(self, statement, values=(), retry=True):
+        """Run one statement, and do not let one failure end the process.
+
+        Two things made this necessary, and neither needs anything unusual to
+        happen. Postgres abandons the rest of a transaction after a failed
+        statement, so without a rollback a single bad query turns into every
+        later query failing, for as long as the process lives. And a managed
+        database closes idle connections and moves them during maintenance, so
+        the one connection opened at startup does not last forever.
+
+        Either way the service went on running, answering, and judging
+        nothing, until somebody restarted it. For a product whose whole job is
+        to notice that nothing is happening, dying quietly is the one failure
+        that must not be possible.
+        """
+        try:
+            cursor = self._db.cursor()
+            cursor.execute(self._sql(statement), values)
+            return cursor
+        except Exception:
+            if self._recover() and retry:
+                return self._execute(statement, values, retry=False)
+            raise
 
     def _fetchall(self, statement, values=()):
         cursor = self._execute(statement, values)
@@ -159,7 +205,7 @@ class EventStore:
                     event.event_id,
                     event.device_id,
                     event.kind,
-                    event.at.isoformat(),
+                    event.at.astimezone(timezone.utc).isoformat(),
                     json.dumps((raws or {}).get(event.event_id)) if raws else None,
                 ))
                 stored += max(0, cursor.rowcount)
@@ -188,10 +234,10 @@ class EventStore:
         clauses, values = [], []
         if since is not None:
             clauses.append("at >= ?")
-            values.append(since.isoformat())
+            values.append(since.astimezone(timezone.utc).isoformat())
         if until is not None:
             clauses.append("at < ?")
-            values.append(until.isoformat())
+            values.append(until.astimezone(timezone.utc).isoformat())
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         with self._lock:
             rows = self._fetchall(
@@ -207,6 +253,13 @@ class EventStore:
     def count(self):
         with self._lock:
             return self._fetchall("SELECT COUNT(*) AS total FROM events")[0]["total"]
+
+    def first_event_at(self):
+        """The oldest event, which is as far back as this house goes."""
+        with self._lock:
+            rows = self._fetchall("SELECT MIN(at) AS earliest FROM events")
+        found = rows[0]["earliest"] if rows else None
+        return parse_timestamp(found) if found else None
 
     def last_event_at(self, kinds=None):
         """The newest event, or the newest of certain kinds.

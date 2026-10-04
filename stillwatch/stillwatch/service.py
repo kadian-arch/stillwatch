@@ -48,6 +48,12 @@ DAY_MINUTES = 24 * 60
 # Sent on every response. None of it replaces the gate in access.py; it closes
 # the gaps around it, so the page cannot be framed by somebody else's site and
 # the browser never guesses at a content type.
+# How long without a camera report or a judgement before health says so. Long
+# enough that it is not an occupancy signal in disguise: a house is routinely
+# quiet for an hour, so a boolean that flipped on the hour would tell a caller
+# roughly what the timestamp used to.
+FEED_SILENT_HOURS = 6
+
 SECURITY_HEADERS = {
     # A year, including subdomains, and offered for preloading. The dashboard
     # is served over TLS and nothing about it should ever be attempted in
@@ -438,7 +444,19 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
 
     @app.get("/")
     def index():
-        return send_from_directory(WEB, "index.html")
+        # A link preview needs absolute addresses. Relative ones are in the
+        # file because the page has to work from a folder, from localhost and
+        # from a domain, so the two that must be absolute are made absolute
+        # here, against whatever host the request actually arrived on.
+        page = (WEB / "index.html").read_text(encoding="utf-8")
+        root = request.url_root.rstrip("/")
+        page = page.replace('property="og:url" content="/"',
+                            'property="og:url" content="%s/"' % root)
+        page = page.replace('property="og:image" content="/static/og.png"',
+                            'property="og:image" content="%s/static/og.png"' % root)
+        answer = make_response(page)
+        answer.headers["Content-Type"] = "text/html; charset=utf-8"
+        return answer
 
     @app.get("/static/<path:name>")
     def static_file(name):
@@ -505,10 +523,28 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
             delivered = store.last_delivery_at()
             watched = store.load_state("watcher") or {}
             payload["stored_events"] = store.count()
-            payload["last_event_at"] = last.isoformat() if last else None
-            payload["last_delivery_at"] = delivered.isoformat() if delivered else None
             payload["watching"] = bool(watched.get("at"))
-            payload["last_tick_at"] = watched.get("at")
+
+            # When somebody last moved in this house is the occupancy record,
+            # which is the thing the sign in exists to keep. Handing out the
+            # timestamp let anyone poll this endpoint once a minute and read
+            # off when the house went quiet and when it woke, which is the
+            # whole of what the wall was built to stop, offered by the one
+            # endpoint whose job was to say the service is running.
+            #
+            # Health is still answerable without it. A feed that has stopped
+            # and a watcher that has stopped are both yes or no questions.
+            fresh = datetime.now(timezone.utc) - timedelta(hours=FEED_SILENT_HOURS)
+            payload["feed_recent"] = bool(last and last >= fresh)
+            payload["judging_recently"] = bool(
+                watched.get("at")
+                and parse_timestamp(watched["at"]) >= fresh)
+
+            if allowed():
+                payload["last_event_at"] = last.isoformat() if last else None
+                payload["last_delivery_at"] = (
+                    delivered.isoformat() if delivered else None)
+                payload["last_tick_at"] = watched.get("at")
         return jsonify(payload)
 
     def ring_client():
@@ -672,6 +708,14 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
                 abort(400, description="on must be a date like 2026-09-25")
             if on > local_date(datetime.now(timezone.utc)):
                 abort(400, description="that day has not happened yet")
+            # A day before the house had any history is as meaningless as one
+            # after today, and was answered with an empty day rather than an
+            # explanation. Refusing only one end of the range is the kind of
+            # inconsistency that reads as nobody having thought about it.
+            earliest = store.first_event_at() if store is not None else None
+            if earliest is not None and on < local_date(earliest):
+                abort(400, description="nothing was recorded here before %s"
+                      % local_date(earliest).isoformat())
         return jsonify(bundle(scenario, on))
 
     @app.get("/api/assess")

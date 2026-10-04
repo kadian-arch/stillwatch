@@ -655,6 +655,46 @@ def test_token_endpoint_without_credentials():
     check("and nothing is stored", store.is_linked() is False)
 
 
+def test_the_store_survives_losing_its_database():
+    section("the connection goes away underneath it")
+
+    import tempfile
+    from datetime import datetime, timezone as tz
+    from stillwatch.model import Event
+
+    folder = tempfile.mkdtemp()
+    store = EventStore(os.path.join(folder, "recover.db"))
+    store.add_many([Event(event_id="a", device_id="hallway", kind="motion",
+                         at=datetime(2026, 10, 3, 9, 0, tzinfo=tz.utc))])
+    check("it starts with what it was given", store.count() == 1)
+
+    # A managed database closes idle connections and moves them during
+    # maintenance. The one connection opened at startup used to be the only
+    # one there would ever be, so the service went on answering and judging
+    # nothing until somebody restarted it.
+    store._db.close()
+    try:
+        after = store.count()
+    except Exception as error:
+        after = "raised %s" % type(error).__name__
+    check("it reopens the connection and answers anyway", after == 1, str(after))
+
+    store.add_many([Event(event_id="b", device_id="kitchen", kind="motion",
+                         at=datetime(2026, 10, 3, 9, 5, tzinfo=tz.utc))])
+    check("and it can still be written to", store.count() == 2, store.count())
+
+    # The other half. Postgres abandons the rest of a transaction after a
+    # failed statement, so one bad query used to poison every later one.
+    try:
+        store._execute("SELECT * FROM a_table_that_is_not_there")
+    except Exception:
+        pass
+    check("a failed statement does not poison the ones after it",
+          store.count() == 2, store.count())
+
+    store.close()
+
+
 def main():
     for test in (
         test_store,
@@ -674,6 +714,7 @@ def main():
         test_backfill_needs_a_linked_home,
         test_account_linking,
         test_token_endpoint_without_credentials,
+        test_the_store_survives_losing_its_database,
     ):
         test()
 

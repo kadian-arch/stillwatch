@@ -276,6 +276,28 @@ Cost is a few hundred short calls a month. A household that never goes quiet
 unexpectedly costs nothing at all, because nothing is written when there is
 nothing to say.
 
+## Showing it raise an alarm on a deployed service
+
+A deployed household is well. To see it judged otherwise, stop the movement
+without stopping the cameras:
+
+```
+python feed.py --catch-up --still --url https://your-domain.example/ring/events
+```
+
+The scheduled job normally posts movement and camera check ins together.
+`--still` posts only the check ins, so the house has every reason to believe it
+is being watched and nobody is moving through it. That is the one state this
+product exists to recognise, and it is not the same as the feed stopping, which
+reads as cameras that cannot be reached and is reported as such.
+
+Run it in the middle of the day. The tolerated quiet at ten in the morning is
+twenty odd minutes and at midnight it is hours, so a still house at night takes
+all night to become interesting.
+
+Put the job back to `python feed.py --catch-up` afterwards and the next run
+fills the gap back in. To leave the gap where it was, add `--from-now`.
+
 ## Checking it works
 
 ```

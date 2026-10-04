@@ -20,6 +20,7 @@ SUITES = (
     ("ring", ROOT / "stillwatch", "tests/test_ring.py"),
     ("narrate", ROOT / "stillwatch", "tests/test_narrate.py"),
     ("cli", ROOT / "stillwatch", "tests/test_cli.py"),
+    ("feed", ROOT, "tests/test_feed.py"),
 )
 
 SCRIPTS = (ROOT / "stillwatch" / "stillwatch" / "web" / "app.js",)

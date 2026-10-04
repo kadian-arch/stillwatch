@@ -72,9 +72,9 @@ yesterday morning and serve it as today:
 
 ```bash
 cd ring-event-simulator
-python -m ringsim --scenario fall --days 40 --start 2026-08-24   --out fall.jsonl --manifest fall.json
+python -m ringsim --scenario fall --days 40 --start 2026-08-24   --out fall.jsonl --manifest manifest.json
 cd ../stillwatch
-python -m stillwatch ingest --events ../ring-event-simulator/fall.jsonl   --manifest ../ring-event-simulator/fall.json --db alarm.db
+python -m stillwatch ingest --events ../ring-event-simulator/fall.jsonl   --manifest ../ring-event-simulator/manifest.json --db alarm.db
 STILLWATCH_TZ=Africa/Douala python -m stillwatch serve --live --db alarm.db   --person Margarette
 ```
 
@@ -95,13 +95,13 @@ python -m stillwatch serve --live --db events.db --person Margarette
 python check.py
 ```
 
-Twelve suites. The detection rules are tested against days that must alert and
+Thirteen suites. The detection rules are tested against days that must alert and
 days that must not: a collapse, an outing of the same length, a lie in, a caller
 at an empty house, and a camera that dies while the person is fine. The rest
 cover the parts a test suite usually misses and this one did not: that every id
 the page script reaches for exists in the page, that the commands run from the
-folder they are actually run from, and that every state is readable as text in
-both themes.
+folder they are actually run from, that the feed posts what it claims to post,
+and that every state is readable as text in both themes.
 
 ## Ring integration
 
@@ -141,6 +141,16 @@ the wrong one. Working out which cameras watch the way *between* rooms, so
 that one person stepping through a door is not mistaken for two, is learned
 from the household's own weeks rather than from what the cameras were named.
 
+How quickly it notices depends on the household, and the spread is wide. Run
+against six simulated homes, each judged on its own learned routine, the same
+collapse at 09:15 was raised as urgent between 55 minutes and seven and a half
+hours later. A person who is normally still for twenty minutes at a time is
+noticed quickly; one who regularly reads for two hours is not, because the
+whole method is to compare against that person rather than against a number
+somebody chose. On the other side, one of those six homes raised an alert on
+an ordinary day when nothing was wrong. Both numbers are in the test suite so
+that a change which makes either worse fails there.
+
 It holds no video and no images. It reads only that movement was seen and at
 what time, which is also why it cannot tell somebody who has fallen from
 somebody who is reading quietly. It can only say that the stillness has gone
@@ -150,21 +160,21 @@ working.
 [docs/SECURITY.md](docs/SECURITY.md) covers what is worth attacking here and
 what stops it.
 
-## Hackathon submission
-
-Built for **Build, Ship, Shape: Amazon Developer Hackathon**.
+## Documentation
 
 | | |
 |---|---|
-| Track | Ring |
-| Mini challenge | AWS Builder, through Amazon Bedrock for the wording of an alert and Amazon SNS for delivering it |
-| Mini challenge | Open Source, through [ring-event-simulator](ring-event-simulator/) |
-| Developer feedback | [docs/PRODUCT_FEEDBACK.md](docs/PRODUCT_FEEDBACK.md), [docs/FRICTION_LOG.md](docs/FRICTION_LOG.md) |
-| How it was built, and why | [docs/DESIGN.md](docs/DESIGN.md), [docs/DECISIONS.md](docs/DECISIONS.md) |
+| How it works, and why it is built this way | [docs/DESIGN.md](docs/DESIGN.md) |
+| Every decision that was not obvious, and what it cost | [docs/DECISIONS.md](docs/DECISIONS.md) |
+| Deploying it, and every setting | [docs/DEPLOY.md](docs/DEPLOY.md) |
+| What is worth attacking here, and what stops it | [docs/SECURITY.md](docs/SECURITY.md) |
+| The Ring developer experience, written as it happened | [docs/FRICTION_LOG.md](docs/FRICTION_LOG.md) |
+| The considered view of every Amazon service used | [docs/PRODUCT_FEEDBACK.md](docs/PRODUCT_FEEDBACK.md) |
+| The event simulator the engine was built against | [ring-event-simulator/](ring-event-simulator/) |
 
-The friction log records the Ring developer experience as it happened, with a
-severity and a suggested fix for each problem encountered. The product feedback
-is the considered view of every Amazon tool used, including what worked.
+The friction log and the product feedback are written for the teams whose
+tools are used here. Each entry states what was attempted, what happened, how
+much it cost, and what would have helped.
 
 ## Licence
 

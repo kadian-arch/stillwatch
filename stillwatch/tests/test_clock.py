@@ -134,10 +134,42 @@ def test_the_baseline_moves_with_the_household():
     check("and never at 23", late_douala == 0, str(late_douala))
 
 
+def test_every_stored_instant_is_utc():
+    section("timestamps that arrive on somebody else's clock")
+
+    import sys
+    from datetime import datetime, timedelta, timezone as tz
+    sys.path.insert(0, str(ROOT))
+    from stillwatch.model import Event, parse_timestamp
+    from stillwatch.store import EventStore
+
+    midnight = parse_timestamp("2026-10-03T01:00:00+01:00")
+    later = parse_timestamp("2026-10-03T00:30:00+00:00")
+
+    check("an offset is converted, not merely accepted",
+          midnight.utcoffset() == timedelta(0), midnight.isoformat())
+    check("the earlier instant is earlier", midnight < later)
+    # The store compares these as text, so this is the comparison that counts.
+    check("and it is still earlier once written down",
+          midnight.isoformat() < later.isoformat(),
+          "%s vs %s" % (midnight.isoformat(), later.isoformat()))
+
+    store = EventStore(":memory:")
+    store.add_many([
+        Event(event_id="a", device_id="hallway", kind="motion", at=midnight),
+        Event(event_id="b", device_id="hallway", kind="motion", at=later),
+    ])
+    newest = store.last_event_at(kinds=("motion",))
+    check("so the newest event is the one that really is newest",
+          newest == later.astimezone(tz.utc), str(newest))
+    store.close()
+
+
 def main():
     try:
         for test in (test_reading_the_clock, test_minute_of_day,
-                     test_the_baseline_moves_with_the_household):
+                     test_the_baseline_moves_with_the_household,
+                     test_every_stored_instant_is_utc):
             test()
     finally:
         using("UTC")

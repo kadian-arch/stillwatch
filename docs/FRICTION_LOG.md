@@ -1,13 +1,13 @@
 # Ring developer friction log
 
 Written as each problem happened rather than reconstructed afterwards, while
-building Stillwatch on the Ring Partner API for the Amazon Build, Ship, Shape
-hackathon.
+building Stillwatch on the Ring Partner API over a month.
 
 Each entry states the task, what was expected, what actually happened, how
 severe it was, what we did instead, and what would have helped.
 
-Severity is judged by what it cost a solo developer with a month:
+Severity is rated by what each problem cost one developer working to a
+deadline:
 **blocking** stopped work entirely, **high** cost a day or more or forced an
 architectural decision, **medium** cost hours, **low** was an annoyance.
 
@@ -73,9 +73,9 @@ URL, Token Exchange URL and Webhook URL. `localhost` is not accepted.
 
 The practical effect is that a developer cannot write a single line of working
 integration code until they have chosen a host, paid for it, deployed, and
-obtained a certificate. For a student on a hackathon deadline that reverses the
-natural order of work: hosting decisions, which normally come last, have to be
-made before anything can be tested.
+obtained a certificate. That reverses the natural order of work: hosting
+decisions, which normally come last, have to be made before a single line of
+integration code can be run.
 
 **Severity.** High. It forced a hosting choice on day one and made deployment a
 prerequisite for development rather than a result of it.
@@ -359,5 +359,7 @@ feeding the real signed webhook.
 **What would have helped.** One synthetic household on the sandbox account,
 with a handful of devices that emit motion and doorbell events on a schedule.
 It would cost Ring very little and it would open the platform to every
-developer who cannot buy the hardware. The hackathon rules say a physical
-device is not required; the staging path does not yet reflect that.
+developer who cannot buy the hardware, which includes most of the places where
+somebody might want to build exactly this. Without it, the only route to a
+working integration is to own a doorbell, and that is a steeper entry
+requirement than the documentation suggests.

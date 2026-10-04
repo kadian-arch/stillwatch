@@ -1067,7 +1067,16 @@
     if (event.key === " ") {
       event.preventDefault();
       if (timer) { stop(); } else { start(); }
+      return;
     }
+    // Stepping through the day is the one thing on this page worth doing
+    // slowly, and a slider you have to hit with a mouse is no use to somebody
+    // who cannot. Five minutes a press, an hour with shift held.
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") { return; }
+    event.preventDefault();
+    stop();
+    var step = (event.shiftKey ? 60 : 5) * (event.key === "ArrowLeft" ? -1 : 1);
+    show(Math.max(0, Math.min(DAY, (Number(ui.time.value) || 0) + step)));
   });
 
   boot();

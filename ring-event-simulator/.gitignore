@@ -5,5 +5,9 @@ build/
 dist/
 .venv/
 venv/
+# Anything the simulator writes. Generated streams and the manifests
+# beside them are output, not source, whatever they get called.
 *.jsonl
 manifest.json
+*-manifest.json
+fall.json

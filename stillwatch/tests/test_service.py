@@ -223,6 +223,51 @@ def test_the_day_knows_whether_it_is_today():
         check("and a finished day is not marked as today", True)
 
 
+def test_a_day_outside_the_history_is_refused():
+    section("asking for a day this house never had")
+
+    client, _ = live_app({})
+    later = client.get("/api/day?scenario=live&on=2099-01-01")
+    check("a day in the future is refused", later.status_code == 400,
+          later.status_code)
+    earlier = client.get("/api/day?scenario=live&on=0001-01-01")
+    # Only one end of the range used to be checked, so year one came back as
+    # an empty day with a straight face while 2099 was refused.
+    check("and so is a day before anything was recorded",
+          earlier.status_code == 400, earlier.status_code)
+    check("the refusal says how far back the house goes",
+          b"nothing was recorded here before" in earlier.data,
+          earlier.data[:160])
+
+
+def test_health_does_not_leak_the_occupancy_record():
+    section("what a stranger can read from the health endpoint")
+
+    client, _ = live_app({"STILLWATCH_MEMBERS": "KAD:9ZP4MX-his-own",
+                          "STILLWATCH_SESSION_SECRET": "a-signing-key"})
+    check("the household really is behind a gate",
+          client.get("/api/health").get_json().get("locked") is True)
+
+    anyone = client.get("/api/health").get_json()
+    # When somebody last moved is the occupancy record, which is the asset the
+    # sign in exists to protect. Polling this once a minute used to give it
+    # away: quiet since 23:40 means the house is asleep or empty.
+    check("a stranger is not told when anyone last moved",
+          "last_event_at" not in anyone, sorted(anyone))
+    check("nor when the watcher last ran",
+          "last_tick_at" not in anyone, sorted(anyone))
+    check("nor when a message last went out",
+          "last_delivery_at" not in anyone, sorted(anyone))
+    check("but can still tell whether the service is alive",
+          anyone.get("ok") is True and "feed_recent" in anyone
+          and "judging_recently" in anyone, sorted(anyone))
+
+    client.post("/api/session", json={"name": "KAD", "passcode": "9ZP4MX-his-own"})
+    inside = client.get("/api/health").get_json()
+    check("the household itself still gets the detail",
+          "last_event_at" in inside and "last_tick_at" in inside, sorted(inside))
+
+
 def test_the_headers_are_set():
     section("what every response carries")
     client, _ = live_app({})
@@ -237,6 +282,16 @@ def test_the_headers_are_set():
     # Without this, the first request of a session can still be made in clear,
     # and a redirect to TLS arrives too late to protect the one that carried
     # the session cookie.
+    # A relative og:image is ignored by every link preview that matters, and
+    # the page claims a large image card, so the share would come out blank.
+    body = page.get_data(as_text=True)
+    check("the preview image is an absolute address",
+          'og:image" content="http' in body,
+          [line for line in body.splitlines() if "og:image\"" in line][:1])
+    check("and the page says where it lives",
+          'og:url" content="http' in body,
+          [line for line in body.splitlines() if "og:url" in line][:1])
+
     strict = page.headers.get("Strict-Transport-Security", "")
     check("the browser is told never to use plain http",
           "max-age=31536000" in strict and "includeSubDomains" in strict, strict)
@@ -318,6 +373,8 @@ def main():
         test_an_answer_carries_a_name_and_tells_everyone,
         test_an_open_service_says_so,
         test_the_day_knows_whether_it_is_today,
+        test_a_day_outside_the_history_is_refused,
+        test_health_does_not_leak_the_occupancy_record,
         test_the_headers_are_set,
     ):
         test()

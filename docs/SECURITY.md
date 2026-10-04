@@ -19,6 +19,7 @@ environment of the deployment and appear nowhere in this repository.
 | The occupancy record | Shows when the house is empty and when the household sleeps |
 | The answer endpoint | An answer stops the service chasing a stretch of quiet |
 | The event webhook | Fabricated motion would make an empty house look occupied |
+| The health endpoint | It is open, so it says only whether the service is alive, never when anybody last moved |
 | Ring credentials | Access tokens and the webhook signing key |
 | Caregiver contact details | Held only when SMTP is used instead of SNS |
 

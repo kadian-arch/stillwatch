@@ -8,9 +8,10 @@ Where something got in the way, the detail is in
 the considered view: what worked, what did not, and what would change it.
 
 One thing is stated plainly up front, because it shapes everything below.
-**Ring hardware was not obtainable where this was built, and the AWS account
-was suspended during the build.** Every judgement here is honest about which
-parts ran against the live service and which did not.
+**Ring hardware is not sold in the country this was built in, and could not be
+imported within the time available.** Every section below says which parts ran
+against the live service and which were exercised against a stand-in, and the
+Ring integration is the one place where that distinction matters most.
 
 ---
 
@@ -194,8 +195,10 @@ and caregivers subscribe themselves by email or text, so Stillwatch never holds
 anybody's contact details. That property is why SNS was chosen over sending
 mail directly.
 
-**Not yet run against the live service,** for the same reason. The channel is
-tested against a stand-in and an email channel is used in the meantime.
+**Running in production.** A topic with confirmed email subscribers receives
+every notification the service sends. The SMTP channel it replaced has been
+removed, along with the credential it needed, which is the point: with SNS
+there is no contact detail and no mail password anywhere in the deployment.
 
 **What is good as a design fit.** Publish-and-subscribe is exactly right for
 this product. A household can add a second daughter without the application
@@ -223,11 +226,13 @@ the policy clearly, named what would be accepted, and explicitly said there was
 no time pressure. That was genuinely good service.
 
 **What would change the most.** Validate the payment instrument at the moment
-it is added, not after activation. In much of Africa a virtual card on mobile
-money is the ordinary way to pay online, and a bank-issued card is not
-something a student can produce the same week. Telling somebody at sign-up that
-their card will not work is a minor inconvenience. Telling them after they have
-built on the account is the difference between shipping and not.
+it is added, not after activation. Across much of Africa a virtual card on mobile
+money is the ordinary way to pay online, and an international bank card is not
+something most people can produce at short notice. Telling somebody at sign-up
+that their instrument will not be accepted is a minor inconvenience. Telling
+them after they have built on the account is the difference between shipping
+and not, and it selects against exactly the developers the credits exist to
+reach.
 
 ---
 
@@ -239,6 +244,14 @@ all in the same place, which is the path a developer without hardware has to
 walk. A device type field and a sandbox that can fire an event would between
 them remove most of what is in the friction log.
 
-Bedrock and SNS were both straightforward to build against and well suited to
-this product. Neither has yet run against the live service, and that is an
-account problem rather than an API one.
+Amazon SNS and Amazon Bedrock are both straightforward to build against and
+well suited to this product, and both run in production: notifications are
+published to a topic caregivers subscribe themselves to, and the opening
+sentence of every message is written by Nova Lite.
+
+Their rough edges are not in the APIs. SNS asks for an ARN in one place and a
+topic name in another without saying they are the same thing. Bedrock returns
+one error, `Operation not allowed`, for at least four unrelated faults, and the
+API whose purpose is to report whether a model may be used reported a region
+as authorised and available where the runtime then refused it. Both are
+described above with the exact calls and responses.

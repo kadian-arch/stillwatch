@@ -81,12 +81,25 @@ class DeviceRoster:
 
 
 def parse_timestamp(text):
+    """One instant, always in UTC.
+
+    Events are stored as text and compared as text, because that is the one
+    thing both databases agree on. Text comparison is only the same as time
+    comparison while every value carries the same offset. A camera reporting
+    `2026-10-03T01:00:00+01:00`, which is midnight, sorts after one reporting
+    `2026-10-03T00:30:00+00:00`, which is half an hour later, and from there
+    the day boundaries, the silence and the last movement are all wrong.
+
+    Ring reports in UTC and so does the simulator, so this never fired. The
+    webhook is open to whatever a camera sends, which is the only reason it
+    had to be guessed at rather than relied on.
+    """
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     moment = datetime.fromisoformat(text)
     if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment
+        return moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
 
 
 def normalise(record):
