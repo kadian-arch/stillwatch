@@ -166,6 +166,64 @@ test an engine that reasons about weeks. It lives in
 [kadian-arch/ring-event-simulator](https://github.com/kadian-arch/ring-event-simulator), under MIT, with its own tests, and is
 useful to anyone else building on the Ring API.
 
+## When Stillwatch itself breaks
+
+A dead service looks exactly like a quiet house. A page that fails to load
+looks exactly like a page with nothing to report. Both of those read as
+reassurance, which makes them the two most dangerous states this software has.
+
+So every failure is handled under one rule: a fault in Stillwatch must be
+visible as a fault in Stillwatch, and must never be phrased as, or mistakable
+for, a reading of the home.
+
+**The cameras stop reporting.** Judged before the inactivity ladder is
+considered at all, not after. If nothing has been heard from the cameras for
+longer than the contact gap, the state is UNKNOWN with the reason `no_contact`,
+and the wording says that this is a problem with the connection and not
+necessarily with anyone at home. A house that cannot be observed is not a
+house that is known to be still.
+
+**Every interior camera is offline.** UNKNOWN with the reason `blind`, naming
+the cameras that are down. Partial blindness is handled differently and more
+carefully: a camera that is down cannot have seen the habit it usually sees, so
+its silence is excluded from the rhythm rather than counted as stillness, and a
+dead camera in a busy room holds the alarm back while a dead camera in a room
+nobody uses does not.
+
+**The database is unreachable.** The health endpoint is the one thing that must
+keep answering, because a health check that returns an error says only that
+something is wrong somewhere. It answers 503, reports `ok: false` and
+`store_ok: false`, and still says whether the webhook is armed, so the part
+that is down can be named without reading the database to find out. Other API
+requests fail with a sentence that says the fault is Stillwatch's own and is
+not a reading of the home. The dashboard shows that sentence rather than
+wording that blames the day.
+
+**A notification channel is down.** Each channel is tried independently and its
+failure recorded against the notice with the channel's name. Judging continues,
+the watcher still records its tick and its state, and the alarm that could not
+be sent is still on the dashboard for anyone who opens it. An undelivered alarm
+is not a cancelled alarm, and the reminder ladder keeps trying.
+
+**The model refuses to write the sentence.** Amazon Bedrock is deliberately off
+the detection path. If it fails, or writes something that does not pass the
+checks on it, the notice goes out in the deterministic wording instead. Nothing
+about whether to alarm depends on it.
+
+**The watcher quietly dies.** The one failure that this product cannot afford,
+because it is indistinguishable from a household where nothing is wrong. Every
+tick writes the time it ran and what it decided, whether or not anything was
+sent, and something outside the process reads that and complains when it stops
+moving.
+
+**Deliveries arrive out of order.** Not a failure mode here, by construction. A
+judgement is a function of the whole stored set read in time order, every event
+carries the time the camera saw it, and every event has an id derived from its
+own content. Arrival order is not an input, so it cannot be a fault. Because
+that is a claim rather than an obvious fact, it is tested: a day delivered
+backwards, and in twenty five shuffles, must produce a byte-identical reading,
+and the transit events arriving last must not turn an outing into an alarm.
+
 ## What it does, and what it does not
 
 It ingests events over a signed webhook and backfills history on first link.

@@ -517,7 +517,11 @@
         }
         fail(error && error.explained
           ? asSentence(error.message)
-          : "Could not load that day.");
+          // Reached when there was no answer to read at all: offline, or a
+          // fault that produced no sentence. Saying "could not load that day"
+          // here blames the day for something on this side, and silence must
+          // never be mistaken for an all clear.
+          : "Could not reach Stillwatch just now. This is not a reading of the home.");
       });
   }
 

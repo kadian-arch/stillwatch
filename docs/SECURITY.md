@@ -126,6 +126,15 @@ last arrived from the cameras, and raises it if either has gone stale. It
 repeats a standing fault a few times a day on a long gap rather than on every
 run, because an alarm that repeats constantly is one that gets filtered.
 
+The same reasoning governs how a request fails. An error page a script cannot
+read a reason out of becomes, on the dashboard, wording that sounds like the
+day was at fault rather than the software. API failures answer in JSON with a
+sentence that says the fault is Stillwatch's own and is not a reading of the
+home, and that sentence names no internal detail: no driver message, no query,
+no path. The health endpoint is deliberately the most robust of them, answering
+503 and naming the store as the part that is down rather than failing with it,
+since a health check that cannot answer narrows nothing down.
+
 ### Data minimisation
 
 Over Amazon SNS, caregivers subscribe themselves to a topic and Stillwatch

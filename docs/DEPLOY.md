@@ -381,13 +381,42 @@ wherever it is available.
 GET https://your-domain.example/api/health
 ```
 
+A deployed household, signed out, answers like this:
+
 ```json
-{"ok": true, "source": "live", "webhook": true, "ring_linked": false, "stored_events": 0}
+{"ok": true, "store_ok": true, "source": "live", "webhook": true,
+ "ring_linked": false, "stored_events": 0, "watching": false,
+ "feed_recent": false, "judging_recently": false,
+ "locked": true, "mode": "shared", "name": null, "scenarios": 1}
 ```
 
-`webhook: true` means the signing key is loaded. `ring_linked` turns true once
-an account is connected, and history is fetched at that moment so a baseline
-exists from the start rather than weeks later.
+| Field | Means |
+|---|---|
+| `ok` | The service answered and could reach its own records |
+| `store_ok` | The database is reachable. `false` with HTTP 503 when it is not |
+| `webhook` | The Ring signing key is loaded |
+| `ring_linked` | An account is connected. History is fetched at that moment, so a baseline exists from the start rather than weeks later |
+| `watching` | The judge has run at least once |
+| `feed_recent` | Something arrived from the cameras within the last six hours |
+| `judging_recently` | The judge ran within the last six hours |
+| `locked` | The household view is behind a sign in |
+| `mode` | `members` for a code each, `shared` for one code, `open` for neither |
+
+**When anybody last moved is not in there**, and that is deliberate. It is the
+occupancy record, and this endpoint is open, so handing out the timestamp would
+let anyone poll once a minute and read off when the house went quiet and when
+it woke. `feed_recent` and `judging_recently` answer the operational question
+without answering that one. The exact times appear only once you are signed in.
+
+Monitor `ok`, `judging_recently` and `feed_recent`. A watcher that has quietly
+died looks exactly like a household where nothing is wrong, which is the one
+failure this product cannot afford, and `stillwatch watchdog` exists to shout
+about it.
+
+If the database becomes unreachable, this endpoint is the one thing that keeps
+answering: 503, with `ok: false` and `store_ok: false`, so the part that is
+down is named rather than guessed at. Other API requests fail with a sentence
+saying the fault is Stillwatch's own and is not a reading of the home.
 
 ## A first day
 

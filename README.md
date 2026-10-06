@@ -100,7 +100,7 @@ python -m stillwatch serve --live --db events.db --person Margarette
 python check.py
 ```
 
-Fourteen suites. The detection rules are judged against whole days that must
+Fifteen suites. The detection rules are judged against whole days that must
 alert and days that must not, every five minutes from midnight to midnight,
 because a false alarm that lasts five minutes still wakes somebody up.
 
@@ -125,6 +125,10 @@ the parts a test suite usually misses and this one did not:
 | A day delivered backwards, and in twenty five shuffles, reads identically | pass |
 | The door event arriving last does not turn an outing into an alarm | pass |
 | A replayed delivery stores once, and cannot shorten a silence | pass |
+| A fault of our own is reported as ours, never as a reading of the home | pass |
+| Health still answers when the database cannot be reached, and names it | pass |
+| A refusal worth reading reaches the page as a sentence, not an HTML page | pass |
+| A notification outage does not stop the judging or hide the alarm | pass |
 | An unsigned or wrongly signed delivery is refused and stores nothing | pass |
 | A forged session cookie is not a session | pass |
 | Nobody can answer for a household without signing in | pass |

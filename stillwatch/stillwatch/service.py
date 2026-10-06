@@ -15,6 +15,7 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, make_response, request, send_from_directory
 from markupsafe import escape
+from werkzeug.exceptions import HTTPException
 
 from . import access
 
@@ -442,6 +443,41 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
     def bad_request(error):
         return jsonify({"error": getattr(error, "description", "bad request")}), 400
 
+    @app.errorhandler(HTTPException)
+    def refused(error):
+        """Anything else that stops an API request, answered in JSON.
+
+        Several endpoints refuse with a sentence worth reading, such as asking
+        for a day before this home had any history. Left to Flask each of
+        those is an HTML error page, the script finds no reason in it, and the
+        dashboard falls back to wording that sounds like the home was at fault
+        rather than the software. The page routes keep their HTML.
+        """
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "error": getattr(error, "description", None) or error.name,
+            }), error.code or 500
+        return error
+
+    @app.errorhandler(500)
+    def broke(error):
+        """A fault of our own, said out loud rather than as a blank page.
+
+        The dashboard shows the server's own sentence when there is one. Left
+        to Flask this is an HTML page, the script cannot read a reason out of
+        it, and the page falls back to wording that sounds like the day was at
+        fault. For something that reports on a person living alone, a failure
+        has to be unmistakably a failure of the software and not a reading of
+        the home.
+        """
+        app.logger.error("request failed: %s %s", request.method, request.path,
+                         exc_info=getattr(error, "original_exception", None) or error)
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Stillwatch could not answer just now, because of"
+                                     " a fault of its own. This is not a reading of"
+                                     " the home."}), 500
+        return error
+
     @app.get("/")
     def index():
         # A link preview needs absolute addresses. Relative ones are in the
@@ -513,11 +549,26 @@ def create_app(source, store=None, webhook_secret=None, ring=None,
             "source": getattr(source, "kind", "replay"),
             "scenarios": len(source.scenarios()),
             "webhook": bool(store is not None and webhook_secret),
-            "ring_linked": bool(store is not None and store.is_linked()),
             "locked": locked,
             "mode": mode,
             "name": viewer(),
         }
+
+        # Everything below reads the database, and the one endpoint that must
+        # keep answering when the database is unreachable is this one. A health
+        # check that returns 500 says only that something is wrong somewhere.
+        # One that answers and says which part is down can be acted on.
+        try:
+            payload["ring_linked"] = bool(store is not None and store.is_linked())
+            # None, not True, when there is no store to be well or unwell.
+            payload["store_ok"] = True if store is not None else None
+        except Exception:
+            app.logger.exception("health could not reach the store")
+            payload["ok"] = False
+            payload["store_ok"] = False
+            payload["ring_linked"] = None
+            return jsonify(payload), 503
+
         if store is not None:
             last = store.last_event_at()
             delivered = store.last_delivery_at()
