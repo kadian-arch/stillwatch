@@ -64,6 +64,12 @@ BLIND_SPOT_RATE = 0.5
 # moving. Where no heartbeat has ever arrived, nothing is assumed.
 CONTACT_GAP_SECONDS = 45 * 60
 
+# How long a total absence of events has to run before it is read as a feed
+# that has stopped rather than a household that is still. The longest quiet
+# any of the recorded days produces is a ten hour lie in, so this sits far
+# above anything a person generates and only catches a stream that has died.
+FEED_DEAD_HOURS = 72
+
 # Being out much longer than usual is worth showing, not worth shouting about.
 # Somebody visiting their sister for the day must not set off a phone. Past a
 # full day with no return, that reasoning stops holding.
@@ -418,6 +424,30 @@ def assess(events, baseline, roster, now, last_contact=None, answered=None):
              "This is a problem with the connection, not necessarily with anyone at home."],
             down,
         )
+
+    # With no heartbeat and no delivery recorded, the newest event of any kind
+    # is the only evidence that anything was ever reaching us. Past a few days
+    # of absolutely nothing, the honest reading is that the feed has stopped.
+    # Left alone it says ALERT with a silence measured in weeks, which reads as
+    # a broken instrument rather than an emergency, and this product's whole
+    # argument is that it tells "nothing moved" from "nothing was observed".
+    if not contacts and events:
+        since = (now - events[-1].at).total_seconds()
+        if since > FEED_DEAD_HOURS * 3600:
+            quiet_for = human_duration(since)
+            return _unknown(
+                now,
+                NO_CONTACT,
+                "Cannot tell. Nothing at all has arrived from this home for %s."
+                % quiet_for,
+                ["The last event of any kind, from any camera, was %s ago."
+                 % quiet_for,
+                 "A gap that long is a feed that has stopped, not somebody who"
+                 " has been still for that whole time.",
+                 "Nothing can be judged about the household until events start"
+                 " arriving again."],
+                down,
+            )
 
     if interior_ids and len(down) == len(interior_ids):
         return _unknown(

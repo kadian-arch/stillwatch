@@ -178,10 +178,14 @@ def main():
     for name, code in results:
         print("  %-12s %s" % (name, "ok" if code == 0 else "FAILED"))
 
+    # Twelve suites are test files; the last three are static checks on the
+    # page and its palette. Counting all fifteen as suites overstates it.
+    checks = len(results) - len(SUITES)
     if failed:
-        print("\n%d of %d suites failed" % (len(failed), len(results)))
+        print("\n%d of %d failed: %s" % (len(failed), len(results), ", ".join(failed)))
         return 1
-    print("\nall %d suites passed" % len(results))
+    print("\nall %d test suites and %d static checks passed"
+          % (len(SUITES), checks))
     return 0
 
 

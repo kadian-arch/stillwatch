@@ -100,7 +100,8 @@ python -m stillwatch serve --live --db events.db --person Margarette
 python check.py
 ```
 
-Fifteen suites. The detection rules are judged against whole days that must
+Twelve test suites, plus three static checks on the page and its palette.
+The detection rules are judged against whole days that must
 alert and days that must not, every five minutes from midnight to midnight,
 because a false alarm that lasts five minutes still wakes somebody up.
 

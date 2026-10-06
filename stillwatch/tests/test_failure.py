@@ -27,9 +27,12 @@ from ringsim import Simulator
 from ringsim.devices import DEFAULT_DEVICES, manifest
 from ringsim.scenarios import SCENARIOS
 
+from dataclasses import replace
+
 from stillwatch.model import Device, DeviceRoster, normalise
-from stillwatch.monitor import ALERT
+from stillwatch.monitor import ALERT, NO_CONTACT, UNKNOWN, assess
 from stillwatch.notify import deliver
+from stillwatch.rhythm import learn
 from stillwatch.service import LiveSource, create_app
 from stillwatch.store import EventStore
 from stillwatch.watch import LiveWatcher
@@ -248,8 +251,48 @@ def test_every_channel_failing_is_still_not_silent():
           not notice.reached_people and not notice.delivered_to)
 
 
+def test_a_feed_that_died_weeks_ago_is_not_an_emergency():
+    """The difference between nothing moving and nothing arriving.
+
+    A store that was filled once and never fed again has no heartbeat and no
+    delivery recorded, so there is no contact signal to go stale. Judged on
+    the events alone it reports an alarm with a silence measured in weeks,
+    which is not a reading of anybody. It is an instrument that has stopped.
+    """
+    section("a feed that stopped weeks ago")
+    events, meta = SCENARIOS["fall"].build(Simulator(seed=SEED), START, DAYS)
+    stream = [normalise(event.to_record()) for event in events]
+    people = roster()
+    now = datetime.now(timezone.utc)
+
+    def landed(hours_ago):
+        shift = (now - timedelta(hours=hours_ago)) - stream[-1].at
+        moved = [replace(event, at=event.at + shift) for event in stream]
+        baseline = learn(moved, people, until=moved[-1].at)
+        return assess(moved, baseline, people, now)
+
+    recent = landed(17)
+    check("a collapse seventeen hours old is still an alarm",
+          recent.state == ALERT, recent.state)
+    check("and still says how long it has been",
+          "17h" in recent.headline, recent.headline[:80])
+
+    two_days = landed(48)
+    check("two days of silence is still an alarm, not a shrug",
+          two_days.state == ALERT, two_days.state)
+
+    stale = landed(24 * 42)
+    check("six weeks of nothing is not an alarm", stale.state != ALERT, stale.state)
+    check("it is unknown, for want of contact", stale.state == UNKNOWN
+          and stale.unknown_reason == NO_CONTACT,
+          "%s / %s" % (stale.state, stale.unknown_reason))
+    check("and it says nothing arrived rather than nobody moved",
+          "arrived" in stale.headline, stale.headline[:90])
+
+
 def main():
     test_health_still_answers_when_the_records_cannot_be_read()
+    test_a_feed_that_died_weeks_ago_is_not_an_emergency()
     test_a_fault_of_our_own_is_not_reported_as_a_reading()
     test_a_refusal_worth_reading_reaches_the_page_as_a_sentence()
     test_a_channel_outage_does_not_stop_the_judging()

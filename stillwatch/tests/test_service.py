@@ -203,7 +203,7 @@ def test_an_open_service_says_so():
 
 def test_the_day_knows_whether_it_is_today():
     section("today and every other day")
-    from datetime import datetime, timezone
+    from datetime import date, datetime, timedelta, timezone
     from stillwatch.clock import local_date
 
     client, _ = live_app({})
@@ -212,14 +212,19 @@ def test_the_day_knows_whether_it_is_today():
     check("the per camera activity is still its own thing",
           isinstance(today["today"], dict))
 
-    # Yesterday, not the first of the month. The fixture holds three days, so
-    # the first of the month is inside that history only during the first few
-    # days of one, and asking for a day before a household had any history is
-    # refused. Written as a calendar date this passed in early October and
-    # began failing on the fifth, which is the kind of test that comes apart
-    # on a date nobody chose.
-    from datetime import timedelta
-    asked = (local_date(datetime.now(timezone.utc)) - timedelta(days=1)).isoformat()
+    # The day is taken from the history the store actually holds, not from the
+    # calendar and not from how much the fixture happens to seed. Written as a
+    # calendar date ("the first of this month") this passed in early October
+    # and began failing on the fifth, because the first of the month is only
+    # inside a short history during the first days of one. Asking the store
+    # what it has cannot come apart on a date nobody chose.
+    client, store = live_app({})
+    first = store.first_event_at()
+    today_date = local_date(datetime.now(timezone.utc))
+    asked = max(local_date(first), today_date - timedelta(days=1)).isoformat()
+    check("the day being asked for is one the store actually has",
+          local_date(first) <= date.fromisoformat(asked) < today_date,
+          "history starts %s, asked %s, today %s" % (local_date(first), asked, today_date))
     past = client.get("/api/day?scenario=live&on=" + asked).get_json()
     check("a day that has been asked for is the day that comes back",
           past.get("day") == asked, str(past)[:120])

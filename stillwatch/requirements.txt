@@ -1,5 +1,12 @@
-flask>=3.0
+# Pinned with upper bounds on purpose. A new minor release of Flask or
+# Werkzeug landing between now and somebody running this is the one change
+# nobody here would have tested, and the error handling depends on Werkzeug's
+# exception classes. Patch releases are still picked up.
+flask>=3.1,<3.2
+werkzeug>=3.1,<3.2
+
 # Postgres in production. SQLite needs nothing extra.
-psycopg[binary]>=3.1
+psycopg[binary]>=3.3,<3.4
+
 # Only needed to send real notifications through Amazon SNS.
-boto3>=1.34
+boto3>=1.34,<2
