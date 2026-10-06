@@ -130,7 +130,34 @@ def check_palette():
     return 1 if failed else 0
 
 
+def replay_days():
+    """Generate the recorded days if they are not there yet.
+
+    They are built from a seed rather than committed, so a fresh clone has
+    none and the suites that replay them have nothing to read. Running the
+    documented command on a clean checkout should not report a failure that
+    only means a generated file is missing.
+    """
+    folder = ROOT / "stillwatch" / "data"
+    if folder.is_dir() and any(folder.glob("*.json")):
+        return 0
+    print("\n=== recorded days ===")
+    print("  generating them, because %s is empty" % folder)
+    finished = subprocess.run([sys.executable, str(ROOT / "demo_data.py")],
+                              cwd=ROOT, capture_output=True, text=True)
+    if finished.returncode != 0:
+        print(finished.stdout[-2000:])
+        print(finished.stderr[-2000:])
+        return 1
+    print("  built the days the replay suites read")
+    return 0
+
+
 def main():
+    if replay_days():
+        print("\ncould not generate the recorded days")
+        return 1
+
     results = []
     for name, folder, script in SUITES:
         print("\n=== %s ===" % name)

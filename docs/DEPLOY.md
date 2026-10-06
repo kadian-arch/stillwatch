@@ -116,7 +116,7 @@ STILLWATCH_SESSION_SECRET    a long random string, used to sign session cookies
 what each of them types:
 
 ```
-STILLWATCH_MEMBERS   Lucie:7F3K2Q-xxxx, KAD:9ZP4MX-xxxx, Nurse:4QW8TB-xxxx
+STILLWATCH_MEMBERS   Lucie:her-own-code, KAD:his-own-code, Nurse:her-own-code
 ```
 
 Each person signs in with their own name and their own code. Nobody can sign

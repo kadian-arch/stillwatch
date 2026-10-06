@@ -117,7 +117,7 @@ def test_the_gate():
 def test_each_person_has_their_own_code():
     section("named people instead of one shared code")
     client, store = live_app({
-        "STILLWATCH_MEMBERS": "Lucie:7F3K2Q-her-own, KAD:9ZP4MX-his-own",
+        "STILLWATCH_MEMBERS": "Lucie:fixture-lucie-code, KAD:fixture-kad-code",
         "STILLWATCH_SESSION_SECRET": "a-signing-key",
     })
 
@@ -126,13 +126,13 @@ def test_each_person_has_their_own_code():
 
     check("somebody else's code does not work",
           client.post("/api/session",
-                      json={"name": "Lucie", "passcode": "9ZP4MX-his-own"}).status_code == 401)
+                      json={"name": "Lucie", "passcode": "fixture-kad-code"}).status_code == 401)
     check("a name nobody holds is refused",
           client.post("/api/session",
-                      json={"name": "Stranger", "passcode": "7F3K2Q-her-own"}).status_code == 401)
+                      json={"name": "Stranger", "passcode": "fixture-lucie-code"}).status_code == 401)
 
     good = client.post("/api/session",
-                       json={"name": "lucie", "passcode": "7F3K2Q-her-own"})
+                       json={"name": "lucie", "passcode": "fixture-lucie-code"})
     check("her own code lets her in", good.status_code == 200, str(good.status_code))
     check("and the household's spelling of her name is what gets recorded",
           good.get_json()["name"] == "Lucie", good.get_json()["name"])
@@ -212,15 +212,19 @@ def test_the_day_knows_whether_it_is_today():
     check("the per camera activity is still its own thing",
           isinstance(today["today"], dict))
 
-    asked = local_date(datetime.now(timezone.utc)).replace(day=1).isoformat()
+    # Yesterday, not the first of the month. The fixture holds three days, so
+    # the first of the month is inside that history only during the first few
+    # days of one, and asking for a day before a household had any history is
+    # refused. Written as a calendar date this passed in early October and
+    # began failing on the fifth, which is the kind of test that comes apart
+    # on a date nobody chose.
+    from datetime import timedelta
+    asked = (local_date(datetime.now(timezone.utc)) - timedelta(days=1)).isoformat()
     past = client.get("/api/day?scenario=live&on=" + asked).get_json()
     check("a day that has been asked for is the day that comes back",
-          past["day"] == asked, past["day"])
-    if past["day"] != local_date(datetime.now(timezone.utc)).isoformat():
-        check("and a finished day is not marked as today", past["is_today"] is False,
-              str(past["is_today"]))
-    else:
-        check("and a finished day is not marked as today", True)
+          past.get("day") == asked, str(past)[:120])
+    check("and a finished day is not marked as today",
+          past.get("is_today") is False, str(past.get("is_today")))
 
 
 def test_a_day_outside_the_history_is_refused():
@@ -243,7 +247,7 @@ def test_a_day_outside_the_history_is_refused():
 def test_health_does_not_leak_the_occupancy_record():
     section("what a stranger can read from the health endpoint")
 
-    client, _ = live_app({"STILLWATCH_MEMBERS": "KAD:9ZP4MX-his-own",
+    client, _ = live_app({"STILLWATCH_MEMBERS": "KAD:fixture-kad-code",
                           "STILLWATCH_SESSION_SECRET": "a-signing-key"})
     check("the household really is behind a gate",
           client.get("/api/health").get_json().get("locked") is True)
@@ -262,7 +266,7 @@ def test_health_does_not_leak_the_occupancy_record():
           anyone.get("ok") is True and "feed_recent" in anyone
           and "judging_recently" in anyone, sorted(anyone))
 
-    client.post("/api/session", json={"name": "KAD", "passcode": "9ZP4MX-his-own"})
+    client.post("/api/session", json={"name": "KAD", "passcode": "fixture-kad-code"})
     inside = client.get("/api/health").get_json()
     check("the household itself still gets the detail",
           "last_event_at" in inside and "last_tick_at" in inside, sorted(inside))
