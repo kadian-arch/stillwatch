@@ -16,11 +16,14 @@ in the small dialect classes below.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
 
 from .model import DING, Device, DeviceRoster, Event, INTERIOR, TRANSIT, parse_timestamp
+
+log = logging.getLogger("stillwatch.store")
 
 STATEMENTS = (
     """CREATE TABLE IF NOT EXISTS events (
@@ -191,7 +194,58 @@ class EventStore:
         """True if this event was new, False if it was a redelivery."""
         return self.add_many([event], {event.event_id: raw} if raw else None) == 1
 
+    def _insert_event(self, statement, values):
+        """One event, behind a savepoint, so its failure costs only itself.
+
+        Postgres abandons the rest of a transaction after a failed statement.
+        Without a savepoint around each row, one event the database will not
+        store would throw away every good event delivered beside it, and a
+        webhook carrying a day of movement would land nothing at all.
+
+        Returns the number of rows written, or None if the database refused
+        this one row and the batch should carry on without it.
+        """
+        try:
+            cursor = self._db.cursor()
+            cursor.execute("SAVEPOINT one_event")
+            cursor.close()
+        except Exception:
+            # No savepoint to hide behind. Better to attempt the write and let
+            # the caller's recovery deal with it than to store nothing.
+            cursor = self._execute(statement, values)
+            written = max(0, cursor.rowcount)
+            cursor.close()
+            return written
+
+        try:
+            cursor = self._db.cursor()
+            cursor.execute(self._sql(statement), values)
+            written = max(0, cursor.rowcount)
+            cursor.close()
+            cursor = self._db.cursor()
+            cursor.execute("RELEASE SAVEPOINT one_event")
+            cursor.close()
+            return written
+        except Exception as error:
+            try:
+                cursor = self._db.cursor()
+                cursor.execute("ROLLBACK TO SAVEPOINT one_event")
+                cursor.close()
+            except Exception:
+                # The transaction itself is gone, not just this row, so this
+                # is the connection failing rather than bad data.
+                raise
+            log.warning("the database refused one event: %s", error)
+            return None
+
     def add_many(self, events, raws=None):
+        """Store what can be stored, and say how much that was.
+
+        A batch is not all or nothing. Ring delivers several events at once
+        and redelivers what it is unsure of, so one unstorable event must not
+        be able to cost the rest, and must not make Ring retry a delivery
+        that will fail again for the same reason.
+        """
         if not events:
             return 0
         statement = (
@@ -199,18 +253,25 @@ class EventStore:
             " VALUES (?, ?, ?, ?, ?) ON CONFLICT (event_id) DO NOTHING"
         )
         stored = 0
+        refused = []
         with self._lock:
             for event in events:
-                cursor = self._execute(statement, (
+                written = self._insert_event(statement, (
                     event.event_id,
                     event.device_id,
                     event.kind,
                     event.at.astimezone(timezone.utc).isoformat(),
                     json.dumps((raws or {}).get(event.event_id)) if raws else None,
                 ))
-                stored += max(0, cursor.rowcount)
-                cursor.close()
+                if written is None:
+                    refused.append(event.event_id)
+                else:
+                    stored += written
             self._db.commit()
+        if refused:
+            log.warning("stored %d of %d events; %d refused: %s",
+                        stored, len(events), len(refused),
+                        ", ".join(refused[:5]))
         # Ring's devices endpoint carries no device type, and its capabilities
         # endpoint does not mention doorbells either, so a camera's name is all
         # there is to classify on. Somebody ringing it is better evidence.

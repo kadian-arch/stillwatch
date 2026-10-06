@@ -29,9 +29,10 @@ from ringsim.scenarios import SCENARIOS
 
 from dataclasses import replace
 
-from stillwatch.model import Device, DeviceRoster, normalise
+from stillwatch.model import Device, DeviceRoster, Event, normalise
 from stillwatch.monitor import ALERT, NO_CONTACT, UNKNOWN, assess
 from stillwatch.notify import deliver
+from stillwatch.ring import sign
 from stillwatch.rhythm import learn
 from stillwatch.service import LiveSource, create_app
 from stillwatch.store import EventStore
@@ -290,8 +291,84 @@ def test_a_feed_that_died_weeks_ago_is_not_an_emergency():
           "arrived" in stale.headline, stale.headline[:90])
 
 
+def test_one_unstorable_event_does_not_cost_the_batch():
+    """Ring delivers several events at once. One bad one must not sink them.
+
+    Postgres abandons the rest of a transaction after a failed statement, so
+    without a savepoint around each row a single event the database will not
+    accept would throw away every good event delivered beside it, and a
+    webhook carrying a morning of movement would land nothing at all.
+    """
+    section("a batch with one event the database refuses")
+    store = EventStore()
+    base = datetime(2026, 9, 20, 9, 0, tzinfo=timezone.utc)
+
+    good_first = Event("g1", "kitchen", "motion", base)
+    # device_id is NOT NULL, so the database itself rejects this row.
+    unstorable = Event("b1", None, "motion", base + timedelta(minutes=1))
+    good_last = Event("g2", "landing", "motion", base + timedelta(minutes=2))
+
+    stored = store.add_many([good_first, unstorable, good_last])
+    check("it reports only what it actually stored", stored == 2, str(stored))
+    check("the good event before the bad one survived",
+          any(event.event_id == "g1" for event in store.events()))
+    check("and so did the one after it",
+          any(event.event_id == "g2" for event in store.events()))
+    check("the refused event is not in the store",
+          not any(event.event_id == "b1" for event in store.events()))
+    check("and the store is still usable afterwards",
+          store.add_many([Event("g3", "hallway", "motion",
+                                base + timedelta(minutes=3))]) == 1)
+    check("so the count is every good event, and nothing else",
+          store.count() == 3, str(store.count()))
+
+
+def test_the_webhook_keeps_what_it_can_from_a_mixed_delivery():
+    section("a delivery where one event is unreadable")
+    secret = "mixed-delivery-secret"
+    store = EventStore()
+    client = create_app(LiveSource(store, person="Margarette"), store=store,
+                        webhook_secret=secret).test_client()
+    body = json.dumps({"data": [
+        {"id": "w1", "device_id": "kitchen", "event_type": "motion_detected",
+         "created_at": "2026-09-20T09:00:00Z"},
+        {"id": "w2", "device_id": "kitchen", "event_type": "motion_detected"},
+        {"id": "w3", "device_id": "landing", "event_type": "motion_detected",
+         "created_at": "2026-09-20T09:02:00Z"},
+    ]}).encode()
+    reply = client.post("/ring/events", data=body,
+                        headers={"X-Signature": sign(secret, body),
+                                 "Content-Type": "application/json"})
+
+    # The middle event has no timestamp, so it cannot be placed in time and
+    # is skipped. The two that were legible are kept, because losing a
+    # morning of movement over one malformed record would be the worse answer.
+    check("the delivery is answered, not left to be retried",
+          reply.status_code == 200, str(reply.status_code))
+    check("the two readable events are kept",
+          reply.get_json().get("stored") == 2, str(reply.get_json()))
+    check("and the unreadable one is not in the store",
+          store.count() == 2, str(store.count()))
+
+    # The same delivery without the unreadable event lands in full.
+    body = json.dumps({"data": [
+        {"id": "w1", "device_id": "kitchen", "event_type": "motion_detected",
+         "created_at": "2026-09-20T09:00:00Z"},
+        {"id": "w3", "device_id": "landing", "event_type": "motion_detected",
+         "created_at": "2026-09-20T09:02:00Z"},
+    ]}).encode()
+    again = client.post("/ring/events", data=body,
+                        headers={"X-Signature": sign(secret, body),
+                                 "Content-Type": "application/json"})
+    check("redelivering the same two stores neither twice",
+          again.get_json().get("stored") == 0 and store.count() == 2,
+          str(again.get_json()))
+
+
 def main():
     test_health_still_answers_when_the_records_cannot_be_read()
+    test_one_unstorable_event_does_not_cost_the_batch()
+    test_the_webhook_keeps_what_it_can_from_a_mixed_delivery()
     test_a_feed_that_died_weeks_ago_is_not_an_emergency()
     test_a_fault_of_our_own_is_not_reported_as_a_reading()
     test_a_refusal_worth_reading_reaches_the_page_as_a_sentence()

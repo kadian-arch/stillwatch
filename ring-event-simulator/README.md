@@ -4,6 +4,7 @@
 [![python](https://img.shields.io/badge/python-3.10%20to%203.13-blue)](pyproject.toml)
 [![licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 [![no dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)](pyproject.toml)
+[![used by](https://img.shields.io/badge/used%20by-Stillwatch-%23175c8e)](https://github.com/kadian-arch/stillwatch)
 
 Generates realistic Ring style event streams for a single person living alone,
 so that software which reacts to those events can be built and tested without

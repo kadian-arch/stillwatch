@@ -216,6 +216,18 @@ tick writes the time it ran and what it decided, whether or not anything was
 sent, and something outside the process reads that and complains when it stops
 moving.
 
+**One event in a delivery cannot be stored, or cannot be read.** A batch is
+not all or nothing. An event Ring sends in a shape that will not parse is
+skipped and the rest of the delivery is kept, and an event the database itself
+refuses sits behind its own savepoint so that only that row is lost. Postgres
+abandons the rest of a transaction after a failed statement, so without the
+savepoint one unstorable event would throw away every good event delivered
+beside it, and a webhook carrying a morning of movement would land nothing at
+all. Both cases are counted and logged, and the delivery is still answered,
+because Ring cannot fix a malformed record by sending it again. A delivery in
+which *nothing* was readable is still reported as an error, since that means
+the payload was not what it claimed to be.
+
 **Deliveries arrive out of order.** Not a failure mode here, by construction. A
 judgement is a function of the whole stored set read in time order, every event
 carries the time the camera saw it, and every event has an id derived from its

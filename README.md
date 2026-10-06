@@ -1,6 +1,11 @@
 # Stillwatch
 
 [![tests](https://github.com/kadian-arch/stillwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/kadian-arch/stillwatch/actions/workflows/ci.yml)
+[![python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](stillwatch/requirements.txt)
+[![licence](https://img.shields.io/badge/licence-Apache%202.0-green)](LICENSE)
+[![built with](https://img.shields.io/badge/built%20with-Ring%20Partner%20API-%23175c8e)](#ring-integration)
+[![live](https://img.shields.io/badge/live-stillwatch.tech-brightgreen)](https://stillwatch.tech)
+[![video](https://img.shields.io/badge/video-never%20requested%20or%20stored-5b4b8a)](docs/SECURITY.md)
 
 **Watches for the silence.**
 
@@ -126,6 +131,8 @@ the parts a test suite usually misses and this one did not:
 | A day delivered backwards, and in twenty five shuffles, reads identically | pass |
 | The door event arriving last does not turn an outing into an alarm | pass |
 | A replayed delivery stores once, and cannot shorten a silence | pass |
+| One unreadable event in a delivery does not discard the others | pass |
+| One event the database refuses does not cost the rest of the batch | pass |
 | A fault of our own is reported as ours, never as a reading of the home | pass |
 | Health still answers when the database cannot be reached, and names it | pass |
 | A refusal worth reading reaches the page as a sentence, not an HTML page | pass |

@@ -13,6 +13,7 @@ key was named differently.
 from __future__ import annotations
 
 import hashlib
+import logging
 import hmac
 import json
 import urllib.error
@@ -24,6 +25,8 @@ from .model import DING, Device, Event, INTERIOR, MOTION, OFFLINE, ONLINE, TRANS
 
 TOKEN_URL = "https://oauth.ring.com/oauth/token"
 API_HOST = "https://api.amazonvision.com"
+log = logging.getLogger("stillwatch.ring")
+
 API_BASE = API_HOST + "/v1"
 SCOPE = "ava.v1:read"
 
@@ -133,14 +136,35 @@ def normalise_ring(payload):
 
 
 def normalise_many(payload):
-    """A webhook or history page, which may hold one event or a list."""
+    """A webhook or history page, which may hold one event or a list.
+
+    One unreadable event does not discard the rest. A delivery can carry a
+    morning of movement, and losing all of it because a single record was
+    missing a field would be a worse answer than keeping what was legible.
+    Ring cannot fix a malformed record by sending it again, so there is
+    nothing to be gained by refusing the whole delivery either.
+
+    If nothing at all could be read, that is still an error worth raising:
+    it means the payload was not what it claimed to be.
+    """
     body = payload.get("data") if isinstance(payload, dict) else None
     records = body if isinstance(body, list) else [payload]
     events = []
+    refused = []
     for record in records:
-        event = normalise_ring(record)
+        try:
+            event = normalise_ring(record)
+        except RingError as error:
+            refused.append(str(error))
+            continue
         if event is not None:
             events.append(event)
+
+    if refused and not events:
+        raise RingError("; ".join(sorted(set(refused))[:3]))
+    if refused:
+        log.warning("kept %d event(s) and skipped %d unreadable one(s): %s",
+                    len(events), len(refused), "; ".join(sorted(set(refused))[:3]))
     return events
 
 
