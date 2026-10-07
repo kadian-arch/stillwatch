@@ -126,6 +126,23 @@ last arrived from the cameras, and raises it if either has gone stale. It
 repeats a standing fault a few times a day on a long gap rather than on every
 run, because an alarm that repeats constantly is one that gets filtered.
 
+### The CDN in front of this
+
+The domain is served through a CDN, and a CDN will inject its own scripts into
+an HTML response if its analytics or bot-detection features are switched on.
+The content security policy above sets no `script-src`, so scripts fall back to
+`default-src 'self'` and anything injected from another origin is refused. That
+is the policy doing its job rather than a fault: a browser console on the live
+site may show a blocked inline script and a blocked third-party beacon, and
+neither of them runs.
+
+It is worth saying out loud because this product promises it does not watch
+anybody. A page that quietly loaded third-party analytics would contradict
+that, whatever the documentation said, and the CSP is what makes the promise
+enforceable rather than a claim. The features are better switched off at the
+CDN as well, so nothing is attempted in the first place, but the policy is what
+guarantees the outcome either way.
+
 The same reasoning governs how a request fails. An error page a script cannot
 read a reason out of becomes, on the dashboard, wording that sounds like the
 day was at fault rather than the software. API failures answer in JSON with a

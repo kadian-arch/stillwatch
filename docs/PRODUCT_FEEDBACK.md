@@ -321,3 +321,140 @@ one error, `Operation not allowed`, for at least four unrelated faults, and the
 API whose purpose is to report whether a model may be used reported a region
 as authorised and available where the runtime then refused it. Both are
 described above with the exact calls and responses.
+
+---
+
+## Feature requests
+
+Each of these came out of building the product, and each is priced by what it
+cost us rather than by how much we would like it. Priority is from this
+project's point of view: critical means it blocked work or forced a design
+decision we did not want to make.
+
+### Ring: a `type` or `family` attribute on a device
+
+**Priority: Critical.**
+
+**What.** One field on `GET /v1/devices` saying what kind of device it is, or a
+doorbell entry in the capabilities list.
+
+**Why it matters to us.** Telling a camera on a way in or out from a camera
+inside a room is the whole product. It is how we tell somebody going out from
+somebody who has stopped moving, and the API does not express it. Today the
+only evidence of a Doorbell Pro being a doorbell is the word `DoorbellPro`
+inside an image filename, and deciding whether an elderly person has left their
+home by parsing a substring of a PNG path is not defensible. We classify on the
+device's name instead and correct it from behaviour, which leaves a household
+that renamed its cameras "Camera 1" and "Camera 2" unclassifiable, and those are
+exactly the households least likely to have configured anything carefully.
+
+### Ring: let the sandbox deliver one event to a registered webhook
+
+**Priority: Critical.**
+
+**What.** A button in the Developers Playground that fires a motion or doorbell
+event at a webhook URL the developer has registered.
+
+**Why it matters to us.** Events are the only part of the Ring API this product
+consumes. The Playground issues a token and lets us verify authentication, the
+device call and the real JSON:API envelope, which is genuinely useful, but its
+simulation is of a live view session. There is no way to make an event arrive.
+For an events-driven integration that one button would be worth more than the
+entire live view simulator, and it is the difference between verifying the
+integration path against Ring and verifying it against code we wrote ourselves.
+
+### Ring: document the history endpoint's pagination
+
+**Priority: Critical.**
+
+**What.** One paragraph and one example response for
+`GET /v1/history/devices/{device_id}/events`: the page size, the parameter names
+for a date range, and whether pagination is by cursor or by link.
+
+**Why it matters to us.** Without it an integrator cannot tell the difference
+between a household that has forty events and a household that has four
+thousand of which they read the first page. For a product that judges how much
+activity is normal, reading one page silently produces a baseline that is wrong
+in the dangerous direction: too little history looks like a quiet person, and a
+quiet baseline hides a real emergency.
+
+### Ring: rotate the client secret and signing key in place
+
+**Priority: Important.**
+
+**What.** Keep the client ID visible in the console, since it is an identifier
+and not a secret, and allow the secret and the HMAC signing key to be
+regenerated without deleting the app.
+
+**Why it matters to us.** All three are shown once and cannot be retrieved. The
+console offers no partial view, not even the client ID, to confirm you are
+looking at the right app. We came close to deleting the app and starting over
+before the downloaded CSV turned up. Beyond our inconvenience, deleting a
+production app is not a workable answer to a leaked secret, which is the one
+moment a partner most needs rotation.
+
+### Ring: accept a localhost callback for an app not yet certified
+
+**Priority: Important.**
+
+**What.** Allow `http://localhost` for the account linking URLs on a private app,
+or provide a first-party tunnel.
+
+**Why it matters to us.** Four public HTTPS addresses are required before a
+single line of integration code can run, so a host has to be chosen, paid for
+and deployed with a certificate before hello world. That reverses the usual
+order of work, and it is a real cost for a developer without a budget. Private
+apps already skip Appstore certification, so the case for requiring public
+HTTPS during development is weaker there.
+
+### Ring: one complete example payload per event type
+
+**Priority: Important.**
+
+**What.** The exact body the platform sends, copied verbatim, for each of
+`motion_detected`, `button_press`, `device_online` and `device_offline`.
+
+**Why it matters to us.** The event types and the signature are specified
+precisely, which was useful. The envelope is not: whether an event arrives bare
+or wrapped as JSON:API, whether the device is a field or a relationship, and
+whether an id is always present. The result is defensive parsing that accepts
+several spellings of everything, which is code nobody enjoys writing or reading
+and which hides real bugs.
+
+### Ring: a reference client, or a published API description
+
+**Priority: Nice-to-have.**
+
+**What.** A client in one or two languages, even explicitly unsupported, or an
+OpenAPI description so developers can generate their own.
+
+**Why it matters to us.** The OAuth exchange, the refresh, the history call and
+the signature check are all plain HTTP and all straightforward. They are also
+the same work, and the same mistakes, for every developer who ever integrates.
+It cost us about a day that produced nothing unique to the product.
+
+### Amazon Bedrock: say which of the four reasons a refusal is
+
+**Priority: Important.**
+
+**What.** Distinguish, in the error itself, a model that is not enabled for the
+account from one that is not available in the region, one whose agreement has
+not been accepted, and one the caller is not authorised for.
+
+**Why it matters to us.** `Operation not allowed` covers all four, and the
+availability API reported the model as authorised and available in a region
+that then refused the call. We spent most of a day on what turned out to be a
+per-account, per-region restriction, and the only way we found it was to try a
+second region. One sentence naming the failing condition would have cost
+minutes.
+
+### Amazon SNS: say when a subscription confirmation has expired
+
+**Priority: Nice-to-have.**
+
+**What.** Make an unconfirmed subscription visually distinct from a confirmed
+one, and say in the console that a confirmation link expires.
+
+**Why it matters to us.** For this product an unconfirmed subscriber is a
+caregiver who will never be told, which is indistinguishable from working until
+the day it matters. That deserves to be louder than one column of small text.

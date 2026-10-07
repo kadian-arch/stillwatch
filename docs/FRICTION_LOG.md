@@ -31,6 +31,16 @@ of them was written the day it happened.
 
 **Task.** Register as a Ring developer to obtain API credentials.
 
+**Steps.**
+
+1. Created a Developer Console account.
+2. Started identity verification and uploaded a national identity card.
+3. Rejected, with no statement of which check had failed.
+4. Searched the documentation and found the name-matching rule on a separate
+   page from the upload screen.
+5. Set the Company Profile legal name to match the document, waited for a
+   passport, and passed on the third of three attempts.
+
 **Expected.** Sign up, verify, build.
 
 **What happened.** Registration requires government photo ID before any API
@@ -64,6 +74,15 @@ was forced rather than chosen.
 
 **Task.** Connect a Ring account to a private app in order to receive events.
 
+**Steps.**
+
+1. Created a private app in the Developer Console.
+2. Opened the account linking configuration and found four URLs required, all
+   of them partner-hosted.
+3. Entered a `localhost` callback, which was refused.
+4. Chose a host, paid for it, deployed, and obtained a certificate.
+5. Re-entered the four URLs as public HTTPS addresses.
+
 **Expected.** Local development against a test account, as with most APIs, with
 a `localhost` callback during development.
 
@@ -95,6 +114,17 @@ public HTTPS during development is weaker there.
 
 **Task.** Work out who calls whom during account linking.
 
+**Steps.**
+
+1. Read the Get Started page, which has the partner calling Ring's token
+   endpoint at `oauth.ring.com`.
+2. Read the Configure page, which has Ring posting an authorisation code to a
+   Token Exchange URL the partner hosts.
+3. Compared both against the API reference to work out which side is the OAuth
+   client.
+4. Implemented acceptance of the code from either a JSON body or a form post,
+   and exchanged it at `oauth.ring.com` either way.
+
 **Expected.** One page saying: the partner does this, Ring does that.
 
 **What happened.** The Get Started page says the developer obtains credentials
@@ -119,6 +149,15 @@ as the two participants, showing each request and who makes it.
 
 **Task.** Call the API.
 
+**Steps.**
+
+1. Searched the developer documentation and GitHub for an official client
+   library.
+2. Searched for a published OpenAPI or similar description to generate one
+   from.
+3. Found neither, and wrote a client by hand from the endpoint reference,
+   covering the OAuth exchange, token refresh, history and signature check.
+
 **Expected.** An official client library, or at least a published OpenAPI
 description to generate one from, as most platforms of this size provide.
 
@@ -141,6 +180,16 @@ developers generate their own.
 ## 5. Webhook payload shapes are left open
 
 **Task.** Parse an incoming event.
+
+**Steps.**
+
+1. Read the webhook reference, which names the event types and specifies the
+   signature exactly.
+2. Looked for a complete example payload for each event type and found none.
+3. Wrote a parser that accepts a bare event or a JSON:API `data` and
+   `attributes` envelope, and the device as either a field or a relationship.
+4. Added a content-derived event id for payloads that carry none, so a
+   redelivery collides with the original.
 
 **Expected.** A complete example payload for each event type, so a parser could
 be written against the exact shape the platform sends.
@@ -172,6 +221,16 @@ verbatim from what the platform actually sends.
 
 **Task.** Read a household's past events, so that a baseline exists on the day
 the product is installed rather than a month later.
+
+**Steps.**
+
+1. Called `GET /v1/history/devices/{device_id}/events`.
+2. Looked in the reference for query parameters, a page size, and the
+   pagination scheme, and found a one line description.
+3. Compared it with the device list endpoint, which does document its
+   `?include=` options.
+4. Implemented following of the JSON:API `links.next` convention, refusing any
+   link pointing at a host other than Ring's own API, with a cap on pages.
 
 **Expected.** The history endpoint documented with its query parameters and its
 pagination scheme, since history is by definition larger than one response.
@@ -209,6 +268,16 @@ cursor or by link.
 
 **Task.** Decide whether the project was possible without owning a Ring device.
 
+**Steps.**
+
+1. Read the Get Started and device pages, which imply hardware is needed to
+   develop and test.
+2. Read the sandbox page and the release notes, which describe a Playground
+   needing no app, no account linking and no subscription.
+3. Treated the most recent page as authoritative.
+4. Settled it by obtaining a Playground token and calling the API with no
+   device registered at all.
+
 **Expected.** A single clear statement of what can be built and tested with no
 hardware.
 
@@ -237,6 +306,16 @@ platform and walking away from it.
 **Task.** Tell a doorbell from an indoor camera, so the product can work out
 whether somebody left the house or stopped moving inside it. This distinction
 is the whole product.
+
+**Steps.**
+
+1. Called `GET /v1/devices` for the Playground device.
+2. Followed the `capabilities` relationship.
+3. Searched the whole response for a type, family, model or category field, and
+   for any doorbell, button or chime capability.
+4. Found the model named nowhere except inside the `image_url` filename.
+5. Classified on the device name instead, defaulting to indoor, then corrected
+   that from behaviour when a device registers a doorbell press.
 
 **Expected.** A type, family, model or category field on the device.
 
@@ -289,6 +368,16 @@ the households least likely to have configured anything carefully.
 **Task.** Fetch the client ID, client secret and HMAC signature key needed for
 OAuth and webhook verification.
 
+**Steps.**
+
+1. Created the app and was shown the client ID, secret and signing key on one
+   screen, behind a checkbox confirming they had been saved.
+2. Continued configuring, then needed the values again.
+3. Searched the console for any partial view, even the client ID alone, and
+   found none.
+4. Searched the machine and found the CSV that the credentials screen had
+   downloaded, then stored it outside the repository.
+
 **Expected.** Credentials visible in the console, with the secret regenerable.
 
 **What happened.** All three appear once, on the screen shown immediately after
@@ -322,6 +411,18 @@ is not a workable answer.
 ## 10. The Playground exercises live view, not the events an integration listens for
 
 **Task.** Verify our client against the real API without owning hardware.
+
+**Steps.**
+
+1. Obtained a short-lived Playground OAuth token.
+2. Confirmed our own client authenticates against `api.amazonvision.com`,
+   calls `/v1/devices`, and parses the real JSON:API envelope.
+3. Looked for any way to make the sandbox deliver a motion or doorbell event to
+   a registered webhook, and found only a live view WHEP and SDP simulation.
+4. Called the history endpoint for the sandbox device, which returned zero
+   events.
+5. Built a signed event feeder of our own, posting to the real webhook with the
+   real HMAC key.
 
 **Expected.** A sandbox that can deliver a motion or doorbell event to a
 registered webhook, since that is the part of the API an events-driven
@@ -358,6 +459,16 @@ feature would be worth more than the whole live view simulator.
 ## 11. The staging path assumes every developer owns hardware
 
 **Task.** Receive real events during development.
+
+**Steps.**
+
+1. Read the account linking documentation, which allows up to ten staging
+   users, each authorising a real Ring account.
+2. Linked a real Ring account that owns no devices.
+3. Received no devices and no events from it, since a real account with no
+   hardware produces neither.
+4. Confirmed Ring devices are not sold in this country, so no staging account
+   available to us could supply an event.
 
 **Expected.** A route to real events that does not begin with buying a
 doorbell, given that the Playground already issues tokens without one.
