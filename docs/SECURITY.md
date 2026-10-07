@@ -128,20 +128,25 @@ run, because an alarm that repeats constantly is one that gets filtered.
 
 ### The CDN in front of this
 
-The domain is served through a CDN, and a CDN will inject its own scripts into
-an HTML response if its analytics or bot-detection features are switched on.
-The content security policy above sets no `script-src`, so scripts fall back to
-`default-src 'self'` and anything injected from another origin is refused. That
-is the policy doing its job rather than a fault: a browser console on the live
-site may show a blocked inline script and a blocked third-party beacon, and
-neither of them runs.
+The domain is served through a CDN, and a CDN appends its own scripts to an
+HTML response when its analytics or bot-detection features are on. The content
+security policy above sets no `script-src`, so scripts fall back to
+`default-src 'self'` and anything inline or from another origin is refused.
+
+**So the browser console on the live site shows one blocked inline script, and
+that is the intended outcome.** It is the CDN's bot-detection snippet, appended
+after the last line of `index.html`, and the policy refuses to run it. Nothing
+in this repository is inline, so every such message is something the page did
+not ask for being turned away. The analytics beacon that was also being
+injected has been switched off at the CDN, so it is no longer attempted at all.
 
 It is worth saying out loud because this product promises it does not watch
-anybody. A page that quietly loaded third-party analytics would contradict
-that, whatever the documentation said, and the CSP is what makes the promise
-enforceable rather than a claim. The features are better switched off at the
-CDN as well, so nothing is attempted in the first place, but the policy is what
-guarantees the outcome either way.
+anybody. A page that quietly loaded third-party analytics or fingerprinting
+would contradict that, whatever the documentation said. Switching the features
+off at the CDN stops the attempt; the policy is what guarantees the outcome
+even when a setting is changed, missed, or not offered on a given plan. Only
+one of those two is under our control, which is why the policy carries the
+promise rather than the configuration.
 
 The same reasoning governs how a request fails. An error page a script cannot
 read a reason out of becomes, on the dashboard, wording that sounds like the
