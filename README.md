@@ -164,9 +164,10 @@ runs against the simulator and against real hardware without changing.
 
 ### What has run against Ring itself
 
-No Ring device is sold in Cameroon, so it is worth being exact about which
-parts have spoken to Ring's own servers and which have not. Anyone reading this
-repository should not have to guess.
+Stillwatch is built on the Ring Partner API, and this table says exactly which
+parts of it have spoken to Ring's own servers. Anyone reading this repository
+should not have to guess, and the integration is strong enough not to need the
+benefit of the doubt.
 
 | | Ring's own API | Our feeder |
 |---|---|---|
