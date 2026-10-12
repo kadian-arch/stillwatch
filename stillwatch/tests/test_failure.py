@@ -365,8 +365,108 @@ def test_the_webhook_keeps_what_it_can_from_a_mixed_delivery():
           str(again.get_json()))
 
 
+class Recording:
+    """Stands in for CloudWatch."""
+
+    def __init__(self, breaks=False):
+        self.calls = []
+        self.breaks = breaks
+
+    def put_metric_data(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.breaks:
+            raise RuntimeError("could not reach CloudWatch")
+
+
+def values(call):
+    return {d["MetricName"]: d["Value"] for d in call["MetricData"]}
+
+
+def test_the_heartbeat_leaves_the_deployment():
+    """The judge reports that it ran, to somewhere that cannot die with it.
+
+    `stillwatch watchdog` runs on the same scheduler, against the same
+    database, inside the same deployment. If the deployment is what broke, it
+    is as likely to be broken too. A metric published outward is the only part
+    of this that an alarm on missing data can see.
+    """
+    section("the judge reporting its own pulse")
+    from stillwatch.metrics import LADDER, Reporter
+
+    client = Recording()
+    reporter = Reporter("margarette", client=client)
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    ok = reporter.tick(ALERT, at=now,
+                       last_event_at=now - timedelta(minutes=62),
+                       last_delivery_at=now - timedelta(minutes=3),
+                       stored_events=14390)
+
+    check("it reported", ok is True and len(client.calls) == 1)
+    sent = values(client.calls[0])
+    check("the heartbeat itself is there", sent.get("JudgeRan") == 1.0, str(sent))
+    check("the state goes as a number an alarm can read",
+          sent.get("StateLevel") == float(LADDER[ALERT]), str(sent))
+    check("how stale the events are", round(sent.get("MinutesSinceEvent", -1)) == 62,
+          str(sent.get("MinutesSinceEvent")))
+    check("and how many are stored", sent.get("StoredEvents") == 14390.0)
+    check("every point is tagged with the household",
+          all(d["Dimensions"][0] == {"Name": "Household", "Value": "margarette"}
+              for d in client.calls[0]["MetricData"]))
+
+    # An alarm set on an ordinary state must not fire, so the ladder has to be
+    # ordered by how much attention is wanted, not alphabetically.
+    check("an ordinary day sits below a worrying one",
+          LADDER["NORMAL"] < LADDER["QUIET"] < LADDER["CONCERN"] < LADDER["ALERT"])
+    check("and a house that cannot be read sits above an ordinary one",
+          LADDER["UNKNOWN"] > LADDER["NORMAL"])
+
+
+def test_reporting_cannot_take_down_the_judging():
+    """Monitoring that can break the thing it monitors is worse than none."""
+    section("CloudWatch is unreachable")
+    from stillwatch.metrics import Reporter
+
+    broken = Recording(breaks=True)
+    reporter = Reporter("margarette", client=broken)
+    check("a failed report says so rather than raising",
+          reporter.tick(ALERT) is False)
+
+    events, meta = SCENARIOS["fall"].build(Simulator(seed=SEED), START, DAYS)
+    target = date.fromisoformat(meta["target_day"])
+    stream = [normalise(event.to_record()) for event in events]
+    store = EventStore()
+    store.remember_devices(list(roster()))
+    store.add_many(stream)
+
+    inbox = Refusing()
+    inbox.name = "recorder"
+    watcher = LiveWatcher(store, "Margarette", [inbox], reporter=reporter)
+    noon = datetime.combine(target, time(12), tzinfo=timezone.utc)
+    notices = watcher.once(noon)
+
+    check("the tick still completed", bool(notices))
+    state = store.load_state("watcher") or {}
+    check("the judgement was still written down", state.get("state") == ALERT,
+          str(state.get("state")))
+    check("and CloudWatch was still attempted", len(broken.calls) > 0)
+
+
+def test_reporting_is_off_unless_it_is_asked_for():
+    section("no credentials, no reporting")
+    from stillwatch.metrics import reporter_from_env
+
+    check("off by default", reporter_from_env({}) is None)
+    check("off when switched off",
+          reporter_from_env({"STILLWATCH_CLOUDWATCH": "0"}) is None)
+    check("and a watcher with no reporter judges exactly the same",
+          LiveWatcher(EventStore(), "M", []).reporter is None)
+
+
 def main():
     test_health_still_answers_when_the_records_cannot_be_read()
+    test_the_heartbeat_leaves_the_deployment()
+    test_reporting_cannot_take_down_the_judging()
+    test_reporting_is_off_unless_it_is_asked_for()
     test_one_unstorable_event_does_not_cost_the_batch()
     test_the_webhook_keeps_what_it_can_from_a_mixed_delivery()
     test_a_feed_that_died_weeks_ago_is_not_an_emergency()

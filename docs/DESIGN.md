@@ -158,6 +158,29 @@ Stillwatch publishes to one address and never holds a phone number or an email
 for anybody. That is a privacy property, not a convenience: there is no
 contact list here to leak.
 
+**Amazon CloudWatch** watches the watcher, from outside it. Every tick
+publishes a heartbeat, the state as a number, and how stale the events and
+deliveries are. An alarm set on *missing data* then fires when nothing arrives
+at all, and goes to the same SNS topic.
+
+That last part is the whole reason it is there. `stillwatch watchdog` already
+checks that the judge is running, but it runs on the same scheduler, against
+the same database, inside the same deployment. If the deployment is what
+broke, the watchdog is as likely to be broken with it, and the silence it was
+built to catch is the silence it produces. A metric published outward is the
+only part of this that something outside can see go missing.
+
+So the chain closes where nothing can die quietly:
+
+    Ring event -> webhook -> engine -> Bedrock writes it -> SNS delivers it
+                                 |
+                                 +-> CloudWatch metric -> alarm -> SNS -> a person
+
+Like Bedrock, it is off the detection path. It is published last, after the
+judgement is written down and sent, and every call is best effort: if
+CloudWatch is unreachable the failure is logged and dropped. Monitoring that
+can take down the thing it monitors is worse than no monitoring.
+
 **The simulator** is why any of the rest could be built. There is no official
 Ring SDK, and the sandbox will not emit events on demand, so a standalone
 generator of realistic multi-week histories was the only way to develop and

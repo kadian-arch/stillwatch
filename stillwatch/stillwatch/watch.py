@@ -33,8 +33,12 @@ log = logging.getLogger("stillwatch.watch")
 
 class LiveWatcher:
     def __init__(self, store, person, channels, narrator=None, link=None,
-                 tick_minutes=TICK_MINUTES, relearn_minutes=RELEARN_MINUTES):
+                 tick_minutes=TICK_MINUTES, relearn_minutes=RELEARN_MINUTES,
+                 reporter=None):
         self.store = store
+        # Telemetry, not judgement. None means nothing is reported and nothing
+        # else changes.
+        self.reporter = reporter
         self.notifier = restore(
             Notifier(person, channels, link=link, narrator=narrator,
                      answered=store.answer_for),
@@ -95,7 +99,29 @@ class LiveWatcher:
                 log.info("sent %s to %s", notice.kind, ", ".join(notice.delivered_to))
             else:
                 log.warning("could not send %s: %s", notice.kind, "; ".join(notice.errors))
+
+        # Last, and outside everything that matters. By this point the
+        # judgement is made, written down and sent, so a reporting failure can
+        # cost only the reporting.
+        self._report(reading, now, notices)
         return notices
+
+    def _report(self, reading, now, notices):
+        if self.reporter is None:
+            return
+        try:
+            self.reporter.tick(
+                reading.state,
+                at=now,
+                last_event_at=self.store.last_event_at(),
+                last_delivery_at=self.store.last_delivery_at(),
+                stored_events=self.store.count(),
+            )
+            for notice in notices:
+                for failure in notice.errors:
+                    self.reporter.delivery_failed(failure.split(":", 1)[0])
+        except Exception:
+            log.warning("could not report this tick", exc_info=True)
 
     def _loop(self):
         while not self._stop.is_set():

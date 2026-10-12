@@ -275,6 +275,72 @@ told, that distinction deserves to be louder than a column of small text.
 
 ---
 
+## Amazon CloudWatch
+
+**Used for:** watching the watcher, from outside the deployment. Every
+judgement publishes a heartbeat and a handful of numbers under the
+`Stillwatch` namespace through `put_metric_data`, and an alarm set on missing
+data reaches the same SNS topic the household notices go to.
+
+**Run against the live service.**
+
+This product's worst failure is not a wrong judgement, it is a judge that has
+stopped running, because a dead service and a quiet house produce exactly the
+same thing: nothing. There is an in-process watchdog, but it runs on the same
+scheduler, against the same database, in the same deployment, so if the
+deployment is what broke it is as likely to be broken with it. CloudWatch is
+the only part of the arrangement that can notice an absence from outside.
+
+**Onboarding, from zero to a metric on a graph.** About fifteen minutes, and
+most of that was deciding what to measure rather than fighting the API.
+`put_metric_data` takes a namespace and a list of points, and it is the whole
+integration. The same credentials already publishing to SNS needed one added
+permission. The metric appeared in the console on the first attempt.
+
+**Would you build with it again? Yes.** The thing that made it worth doing is
+a feature rather than an API: an alarm can treat *missing data* as the alarm
+condition. Almost nothing else in a stack can tell you that something stopped
+happening, and for this product that is the entire question.
+
+**What is good.** `put_metric_data` is one call with no setup, no agent and no
+resource to create first. Dimensions are a sensible way to separate one
+household from another, and a numeric state metric means an alarm can be set
+on severity without anything parsing words. Billing was legible: a handful of
+custom metrics is cents a month, which matters when the alternative is a
+hosted monitoring product costing more than the service it watches.
+
+**What needs work.**
+
+**"Treat missing data as" is the most important setting on the page, and it is
+hidden.** It sits under "Additional configuration", collapsed, below the fold,
+and it defaults to `missing`, which means an alarm whose whole purpose is to
+catch an absence silently does nothing. Somebody building exactly the thing
+CloudWatch is best at has to know in advance to go and find it. It deserves to
+be a first-class choice on the condition step, next to the threshold, where
+the question "what if nothing arrives?" is actually being asked.
+
+**A metric does not exist until it is written, so the alarm cannot be made
+first.** Creating the alarm is the step you want to do while setting the
+service up, but the console cannot offer a metric it has never seen, so the
+order is forced: deploy, wait for a tick, then go back and build the alarm. It
+is easy to deploy, mean to come back, and never return. Allowing an alarm on a
+namespace and metric name that do not exist yet, in the state the documentation
+calls insufficient data, would remove a real failure mode rather than a
+nuisance.
+
+**The default period hides short gaps.** Five minutes is the console default
+and a reasonable one, but for a heartbeat that is also the resolution of the
+answer, and nothing on the screen connects the period you pick to how quickly
+you will be told. A one-line statement of the worst-case detection delay, from
+the period and the evaluation count already on screen, would turn a guess into
+a decision.
+
+**What would change the most:** put "treat missing data as" on the condition
+step rather than behind a collapsed section, and let an alarm be created for a
+metric that has not arrived yet.
+
+---
+
 ## AWS account onboarding, which is not a tool but shaped everything
 
 **What happens.** AWS does not accept virtual cards, which is a documented and
@@ -310,17 +376,21 @@ all in the same place, which is the path a developer without hardware has to
 walk. A device type field and a sandbox that can fire an event would between
 them remove most of what is in the friction log.
 
-Amazon SNS and Amazon Bedrock are both straightforward to build against and
-well suited to this product, and both run in production: notifications are
-published to a topic caregivers subscribe themselves to, and the opening
-sentence of every message is written by Nova Lite.
+Amazon SNS, Amazon Bedrock and Amazon CloudWatch are all straightforward to
+build against and well suited to this product, and all three run in
+production: notifications are published to a topic caregivers subscribe
+themselves to, the opening sentence of every message is written by Nova Lite,
+and the service publishes its own pulse outward so that an alarm on missing
+data can catch the one failure nothing inside the deployment can report.
 
 Their rough edges are not in the APIs. SNS asks for an ARN in one place and a
 topic name in another without saying they are the same thing. Bedrock returns
 one error, `Operation not allowed`, for at least four unrelated faults, and the
 API whose purpose is to report whether a model may be used reported a region
-as authorised and available where the runtime then refused it. Both are
-described above with the exact calls and responses.
+as authorised and available where the runtime then refused it. CloudWatch
+buries the one setting that makes an absence alarmable, and will not let the
+alarm be built before the first metric arrives. All three are described above
+with the exact calls and responses.
 
 ---
 
@@ -447,6 +517,33 @@ that then refused the call. We spent most of a day on what turned out to be a
 per-account, per-region restriction, and the only way we found it was to try a
 second region. One sentence naming the failing condition would have cost
 minutes.
+
+### Amazon CloudWatch: put "treat missing data as" on the condition step
+
+**Priority: Important.**
+
+**What.** Move the missing-data choice out of the collapsed "Additional
+configuration" section and onto the condition step, beside the threshold.
+
+**Why it matters to us.** Our most important alarm is an absence: the judge
+has stopped running and no metric is arriving. The setting that makes that
+alarmable is the one setting the console hides, and it defaults to ignoring
+missing data, so an alarm built the obvious way does nothing in the exact case
+it was created for. We knew to go and find it. A developer building the same
+safety net who does not know will believe they are covered and will not be.
+
+### Amazon CloudWatch: let an alarm be created before the metric exists
+
+**Priority: Nice-to-have.**
+
+**What.** Allow an alarm on a namespace and metric name that have not been
+published yet, starting in the insufficient-data state.
+
+**Why it matters to us.** The console cannot offer a metric it has never seen,
+so setting up monitoring forces the order: deploy, wait for a tick, come back
+later and build the alarm. Coming back later is the step people skip, and for
+a product whose whole argument is that silence must be noticed, an unfinished
+alarm is the worst possible thing to leave behind.
 
 ### Amazon SNS: say when a subscription confirmation has expired
 

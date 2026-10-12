@@ -44,7 +44,10 @@ start. That distinction is the product.
 - Judges the present against it, on a ladder from normal to alert, with away
   sitting beside the ladder rather than on it.
 - Says why, in a sentence, every single time.
-- Tells the family only when it is worth telling them, through Amazon SNS.
+- Tells the family only when it is worth telling them, through Amazon SNS,
+  in a sentence written by Amazon Bedrock from facts the engine already settled.
+- Reports its own pulse outward to Amazon CloudWatch, so that a service which
+  has quietly died raises an alarm instead of looking like a quiet house.
 - Never looks at anyone. No video analysis, by design.
 
 ## Repository

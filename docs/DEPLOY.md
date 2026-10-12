@@ -418,6 +418,49 @@ answering: 503, with `ok: false` and `store_ok: false`, so the part that is
 down is named rather than guessed at. Other API requests fail with a sentence
 saying the fault is Stillwatch's own and is not a reading of the home.
 
+## Watching the watcher from outside
+
+Optional, and off unless you switch it on. It exists because the in-process
+watchdog cannot report the one failure that matters most: the whole deployment
+being gone.
+
+```
+STILLWATCH_CLOUDWATCH            1 to switch it on, absent or 0 to leave it off
+STILLWATCH_CLOUDWATCH_REGION     defaults to AWS_REGION
+STILLWATCH_CLOUDWATCH_NAMESPACE  defaults to Stillwatch
+STILLWATCH_HOUSEHOLD             the Household dimension on every metric
+```
+
+The same AWS credentials that publish to SNS need `cloudwatch:PutMetricData`
+added. Nothing else.
+
+Each tick publishes, under the `Stillwatch` namespace and tagged with the
+household:
+
+| Metric | What it is |
+|---|---|
+| `JudgeRan` | 1, every tick. **Its absence is the alarm** |
+| `StateLevel` | 0 normal, 1 quiet or away, 2 cannot tell, 3 concern, 4 alert |
+| `MinutesSinceEvent` | How long since anything arrived from the cameras |
+| `MinutesSinceDelivery` | How long since Ring last reached the webhook |
+| `StoredEvents` | How many events are held |
+| `DeliveryFailed` | A notice a channel would not take, tagged with the channel |
+
+**The alarm to create**, in the CloudWatch console:
+
+1. Alarms, Create alarm, Select metric, `Stillwatch`, `JudgeRan`.
+2. Statistic **Sum**, period **5 minutes**.
+3. Condition: Lower than **1**.
+4. Under Additional configuration set **Treat missing data as bad**. This is
+   the setting the whole thing turns on. Without it an absent metric is
+   ignored, which is exactly the case being guarded against.
+5. Send the notification to the same SNS topic the household notices use, or a
+   separate operator topic if you would rather not wake the family over a
+   deployment problem.
+
+A second alarm on `MinutesSinceDelivery` above sixty catches Ring having
+stopped talking to you while the service itself is fine.
+
 ## A first day
 
 A newly connected home has no history, so Stillwatch says so rather than

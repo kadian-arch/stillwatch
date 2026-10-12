@@ -620,10 +620,15 @@ def cmd_serve(args):
 
     watcher = None
     if args.live and args.notify:
+        from .metrics import reporter_from_env
         from .watch import LiveWatcher
 
-        watcher = LiveWatcher(store, args.person, channels).start()
+        reporter = reporter_from_env()
+        watcher = LiveWatcher(store, args.person, channels,
+                              reporter=reporter).start()
         print("  watching for silence, telling: %s" % ", ".join(watcher.channels))
+        if reporter is not None:
+            print("  reporting its own heartbeat to CloudWatch")
 
     from .narrate import narrator_from_env
 
