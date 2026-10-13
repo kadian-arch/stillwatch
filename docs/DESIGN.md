@@ -170,11 +170,20 @@ broke, the watchdog is as likely to be broken with it, and the silence it was
 built to catch is the silence it produces. A metric published outward is the
 only part of this that something outside can see go missing.
 
+**AWS Lambda and Amazon EventBridge** ask the other question. The heartbeat
+proves the judge is running; it cannot prove the site is reachable, and those
+two fail independently. A certificate that expired or a CDN misrouting leaves
+the process alive and publishing while a caregiver sees nothing. So a small
+function calls the public health endpoint on a schedule, from outside
+everything, and reports what a visitor would have got.
+
 So the chain closes where nothing can die quietly:
 
     Ring event -> webhook -> engine -> Bedrock writes it -> SNS delivers it
                                  |
                                  +-> CloudWatch metric -> alarm -> SNS -> a person
+                                 |
+    EventBridge -> Lambda -> GET /api/health -> CloudWatch -> alarm -> SNS
 
 Like Bedrock, it is off the detection path. It is published last, after the
 judgement is written down and sent, and every call is best effort: if

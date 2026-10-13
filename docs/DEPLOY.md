@@ -461,6 +461,52 @@ household:
 A second alarm on `MinutesSinceDelivery` above sixty catches Ring having
 stopped talking to you while the service itself is fine.
 
+## Asking from outside, on a schedule
+
+The heartbeat above is published *outward from the dyno*. It proves the judge
+is running. It cannot prove the site is reachable, because those two fail
+independently: a certificate that expired, a DNS or CDN change, or a router
+that stopped sending traffic to the right place all leave the process alive and
+publishing happily while a caregiver opening the dashboard sees nothing.
+
+So [`deploy/lambda/health_check.py`](../deploy/lambda/health_check.py) runs on
+AWS Lambda, on an EventBridge schedule, and calls the public health endpoint
+the way a visitor does. It needs no packaging: `urllib` and `boto3` are both in
+the Python runtime already. It holds no credentials for the household and reads
+nothing private, because the health endpoint is open by design and says nothing
+about whether anybody is home.
+
+It publishes four readings, under the same namespace and household dimension:
+
+| Metric | What it is |
+|---|---|
+| `SiteReachable` | 1 when the endpoint answered 200 and reported `ok` |
+| `SiteAnswered` | 1 when it answered at all, whatever it said |
+| `SiteStoreOk` | 0 when it answered and named the database as down |
+| `SiteLatencyMs` | How long the round trip took |
+
+`SiteReachable` and `SiteAnswered` together separate the three cases that
+otherwise look alike. Both 1 is healthy. Answered but not reachable means the
+service is up and telling you which part of itself is broken, which is what
+our own 503 does. Neither means the deployment could not be reached at all,
+and that is the one no metric published from inside it could ever report.
+
+**Environment on the function:**
+
+```
+HEALTH_URL        https://your-domain.example/api/health
+HOUSEHOLD         the same value as STILLWATCH_HOUSEHOLD
+NAMESPACE         Stillwatch
+TIMEOUT_SECONDS   10
+```
+
+Its execution role needs `cloudwatch:PutMetricData` and nothing else.
+
+**Alarms worth setting on it:** `SiteReachable` below 1 for two periods, and
+`SiteLatencyMs` above a few seconds. The second one catches a dyno that has
+gone to sleep, where the first visitor of the hour waits ten seconds for a page
+while every automated check reports the service as perfectly well.
+
 ## A first day
 
 A newly connected home has no history, so Stillwatch says so rather than

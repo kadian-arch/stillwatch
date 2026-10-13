@@ -136,12 +136,20 @@ def reporter_from_env(environ=None):
         return None
 
     household = (environ.get("STILLWATCH_HOUSEHOLD") or "").strip()
+    # The same order the SNS channel uses, so one region setting serves both
+    # and metrics cannot quietly land in a different region from the notices.
     region = ((environ.get("STILLWATCH_CLOUDWATCH_REGION") or "").strip()
-              or (environ.get("AWS_REGION") or "").strip() or None)
+              or (environ.get("AWS_REGION") or "").strip()
+              or (environ.get("AWS_DEFAULT_REGION") or "").strip()
+              or None)
     namespace = (environ.get("STILLWATCH_CLOUDWATCH_NAMESPACE") or "").strip() or NAMESPACE
 
     try:
-        return Reporter(household or "default", region=region, namespace=namespace)
+        reporter = Reporter(household or "default", region=region,
+                            namespace=namespace)
+        log.info("reporting to CloudWatch namespace %s in region %s as household %s",
+                 namespace, region or "(from the environment)", household or "default")
+        return reporter
     except Exception as error:
         # A missing boto3, or credentials that will not resolve. Same rule: the
         # product runs without its telemetry rather than refusing to start.

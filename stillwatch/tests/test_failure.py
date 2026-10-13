@@ -462,8 +462,62 @@ def test_reporting_is_off_unless_it_is_asked_for():
           LiveWatcher(EventStore(), "M", []).reporter is None)
 
 
+def test_the_outside_check_reads_the_health_endpoint_correctly():
+    """The check that runs on Lambda, judged without a network.
+
+    It has to tell three things apart that all look like trouble from inside:
+    a healthy site, a site that answers and says its database is gone, and a
+    site that does not answer at all. Only the last of those means the
+    deployment is unreachable.
+    """
+    section("the outside health check")
+    sys.path.insert(0, str(ROOT.parent / "deploy" / "lambda"))
+    import health_check
+
+    healthy = json.dumps({"ok": True, "store_ok": True, "webhook": True,
+                          "feed_recent": True})
+    good = health_check.assess(200, healthy, 412.0)
+    check("a healthy site is reachable", good["SiteReachable"] == 1, str(good))
+    check("and its store is reported well", good["SiteStoreOk"] == 1)
+    check("and the latency is carried", good["SiteLatencyMs"] == 412.0)
+
+    # The service answering 503 with store_ok false is the case our own error
+    # handling produces. It is up, and it is telling us which part is down.
+    unwell = json.dumps({"ok": False, "store_ok": False, "webhook": True})
+    sick = health_check.assess(503, unwell, 300.0)
+    check("a site that answers but is unwell is not called reachable",
+          sick["SiteReachable"] == 0, str(sick))
+    check("but it did answer", sick["SiteAnswered"] == 1)
+    check("and the store is named as the part that is down",
+          sick["SiteStoreOk"] == 0)
+
+    # Nothing at all: DNS, TLS, routing, or the host simply gone.
+    dead = health_check.assess(None, "", 10000.0)
+    check("no answer at all is not reachable", dead["SiteReachable"] == 0)
+    check("and is recorded as not having answered", dead["SiteAnswered"] == 0,
+          str(dead))
+
+    # A proxy error page, which is what a CDN returns when the origin is gone.
+    html = health_check.assess(502, "<html>Bad Gateway</html>", 80.0)
+    check("an HTML error page is not mistaken for health",
+          html["SiteReachable"] == 0, str(html))
+
+    data = health_check.metric_data(good, household="margarette")
+    names = {d["MetricName"] for d in data}
+    check("every metric carries the household",
+          all(d["Dimensions"] == [{"Name": "Household", "Value": "margarette"}]
+              for d in data))
+    check("latency is sent as milliseconds, not a count",
+          next(d["Unit"] for d in data if d["MetricName"] == "SiteLatencyMs")
+          == "Milliseconds")
+    check("and the four readings are all published",
+          names == {"SiteReachable", "SiteAnswered", "SiteStoreOk",
+                    "SiteLatencyMs"}, str(names))
+
+
 def main():
     test_health_still_answers_when_the_records_cannot_be_read()
+    test_the_outside_check_reads_the_health_endpoint_correctly()
     test_the_heartbeat_leaves_the_deployment()
     test_reporting_cannot_take_down_the_judging()
     test_reporting_is_off_unless_it_is_asked_for()
