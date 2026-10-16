@@ -515,8 +515,49 @@ def test_the_outside_check_reads_the_health_endpoint_correctly():
                     "SiteLatencyMs"}, str(names))
 
 
+def test_production_starts_the_watcher_the_same_way_the_cli_does():
+    """Whatever `serve` hands the watcher, the thing gunicorn runs must too.
+
+    This check exists because of a real miss. The reporter was wired into the
+    command line `serve`, tests passed, and nothing reported in production for
+    a day, because the Procfile runs `gunicorn wsgi:app` and `wsgi.py` built
+    its own watcher without one. Both entry points are read here rather than
+    one, since green tests on the path nobody deploys prove nothing.
+    """
+    section("both ways of starting the watcher")
+    import ast
+    import io
+
+    def watcher_keywords(path):
+        tree = ast.parse(io.open(path, encoding="utf-8").read())
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "LiveWatcher"):
+                return {k.arg for k in node.keywords}
+        return None
+
+    production = watcher_keywords(str(ROOT.parent / "wsgi.py"))
+    command_line = watcher_keywords(str(ROOT / "stillwatch" / "cli.py"))
+
+    check("wsgi.py starts a watcher at all", production is not None)
+    check("and so does the serve command", command_line is not None)
+    check("production passes it a reporter",
+          production is not None and "reporter" in production, str(production))
+    check("so does the serve command",
+          command_line is not None and "reporter" in command_line,
+          str(command_line))
+    check("production passes it a narrator too",
+          production is not None and "narrator" in production, str(production))
+
+    source = io.open(str(ROOT.parent / "wsgi.py"), encoding="utf-8").read()
+    check("and the setting that turns it on is documented where it is read",
+          "STILLWATCH_CLOUDWATCH" in source)
+
+
 def main():
     test_health_still_answers_when_the_records_cannot_be_read()
+    test_production_starts_the_watcher_the_same_way_the_cli_does()
     test_the_outside_check_reads_the_health_endpoint_correctly()
     test_the_heartbeat_leaves_the_deployment()
     test_reporting_cannot_take_down_the_judging()

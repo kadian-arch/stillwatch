@@ -14,6 +14,10 @@ Configuration comes from the environment, never from a file in the repository:
     STILLWATCH_BEDROCK_MODEL_ID        optional, to have the opening sentence
                                        of a message written rather than built
     STILLWATCH_NOTIFY                  1 to judge on a timer and send messages
+    STILLWATCH_CLOUDWATCH              1 to publish the judge's own heartbeat,
+                                       so an alarm on missing data catches a
+                                       deployment that has gone quiet
+    STILLWATCH_HOUSEHOLD               the name on those metrics
     STILLWATCH_MEMBERS                 who may sign in and the code each of
                                        them uses, as Name:code, Name:code
     STILLWATCH_DEMO_DATA               a folder for the recorded days, built
@@ -89,14 +93,20 @@ app = create_app(
 # its own silence. This assumes a single worker; more than one would each hold
 # their own notifier and a caregiver would hear everything twice.
 if os.environ.get("STILLWATCH_NOTIFY", "").strip() == "1":
+    from stillwatch.metrics import reporter_from_env
     from stillwatch.watch import LiveWatcher
 
     # Bedrock rewrites the opening sentence of a message and nothing else. The
     # reasoning under it is the engine's and is sent exactly as produced, so a
     # model being unavailable costs the message its tone and none of its facts.
+    #
+    # The reporter publishes the heartbeat an alarm watches for. It is None
+    # unless asked for, and it is passed here rather than only in the command
+    # line `serve`, because this file is what production actually runs.
     LiveWatcher(
         store,
         os.environ.get("STILLWATCH_PERSON", "The household"),
         channels,
         narrator=narrator,
+        reporter=reporter_from_env(),
     ).start()
