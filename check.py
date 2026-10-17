@@ -25,9 +25,35 @@ SUITES = (
     ("feed", ROOT, "tests/test_feed.py"),
 )
 
-SCRIPTS = (ROOT / "stillwatch" / "stillwatch" / "web" / "app.js",)
+SCRIPTS = (ROOT / "stillwatch" / "stillwatch" / "web" / "app.js",
+           ROOT / "stillwatch" / "stillwatch" / "web" / "theme.js")
 PAGE = ROOT / "stillwatch" / "stillwatch" / "web" / "index.html"
 STYLE = ROOT / "stillwatch" / "stillwatch" / "web" / "style.css"
+
+
+def _rgb(colour):
+    return tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _blend(colour, ground, weight):
+    """`color-mix(in srgb, colour weight, ground)`, worked out in Python."""
+    if colour is None or ground is None:
+        return ground
+    near, far = _rgb(colour), _rgb(ground)
+    return "#%02x%02x%02x" % tuple(
+        int(round(near[i] * weight + far[i] * (1 - weight))) for i in range(3))
+
+
+def _wash(pattern):
+    """Read a mix percentage back off the stylesheet.
+
+    Typing it here as well would mean the check kept testing the old wash
+    after somebody changed the real one, which is the failure this whole
+    file exists to prevent.
+    """
+    found = re.search(pattern, STYLE.read_text(encoding="utf-8"))
+    return float(found.group(1)) / 100.0 if found else 0.0
+
 
 # Every state is a word as well as a colour, and the word is small text on a
 # card. Four of these were below the readable threshold, the worst of them
@@ -35,8 +61,40 @@ STYLE = ROOT / "stillwatch" / "stillwatch" / "web" / "style.css"
 # has to be legible to somebody who has just woken up.
 TEXT_TOKENS = ("--faint", "--muted", "--normal", "--quiet", "--concern",
                "--alert", "--away", "--settled", "--unknown")
-CARDS = {"light": "#ffffff", "dark": "#191b21"}
+STATES = tuple(t for t in TEXT_TOKENS if t not in ("--faint", "--muted"))
 READABLE = 4.5
+
+MSG_TINT = _wash(r"var\(--u\) ([0-9.]+)%, var\(--surface-2\)")
+PILL_TINT = _wash(
+    r"background: color-mix\(in srgb, var\(--u\) ([0-9.]+)%, transparent\)")
+
+
+def check_inline_script():
+    """The page is served under `default-src \'self\'`, which refuses inline
+    script without running it and without saying so anywhere the author looks.
+
+    A theme bootstrap was written straight into the document, the browser
+    declined it, and the page went on looking exactly as it had. Every suite
+    stayed green. So the rule is checked here instead of being remembered.
+    """
+    page = PAGE.read_text(encoding="utf-8")
+    loose = [tag for tag in re.findall(r"<script\b[^>]*>", page)
+             if "src=" not in tag]
+    if loose:
+        print("  FAIL  the page carries script the policy will refuse: %s"
+              % ", ".join(loose))
+        return 1
+
+    # And the files it does ask for have to be there to ask for.
+    missing = [name for name in re.findall(r'<script src="/static/([^"]+)"', page)
+               if not (PAGE.parent / name).exists()]
+    if missing:
+        print("  FAIL  the page asks for %s, which is not in web/"
+              % ", ".join(missing))
+        return 1
+
+    print("  pass  no inline script, and every script it asks for exists")
+    return 0
 
 
 def check_scripts():
@@ -91,18 +149,38 @@ def _contrast(one, two):
 def _palettes():
     """The light block, then everything from the dark overrides onwards."""
     css = STYLE.read_text(encoding="utf-8")
-    head, _, tail = css.partition("@media (prefers-color-scheme: dark)")
+    head, _, tail = css.partition(''':root[data-theme="dark"]''')
     found = {}
     for theme, block in (("light", head), ("dark", tail)):
         found[theme] = {
             name: value for name, value in
-            re.findall(r"(--[a-z-]+):\s*(#[0-9a-fA-F]{6})\s*;", block)
+            re.findall(r"(--[a-z0-9-]+):\s*(#[0-9a-fA-F]{6})\s*;", block)
         }
     return found
 
 
+def _grounds(palette, token, value):
+    """Every background this token can end up on.
+
+    It is not only the card. A state word also sits on the inset panels, on a
+    message tinted with its own colour, and inside the pill, which is that
+    colour again over the tint. Checking against white alone passed five
+    light values that were short of the line everywhere else on the page.
+    """
+    card = palette.get("--surface")
+    panel = palette.get("--surface-2") or card
+    if token in ("--faint", "--muted"):
+        # Quiet text is never tinted with itself, but it does sit on messages
+        # tinted with somebody else's state.
+        return (card, panel) + tuple(
+            _blend(palette[s], panel, MSG_TINT)
+            for s in STATES if s in palette)
+    tinted = _blend(value, panel, MSG_TINT)
+    return (card, panel, tinted, _blend(value, tinted, PILL_TINT))
+
+
 def check_palette():
-    """Every state word has to be readable on the card it sits on.
+    """Every state word has to be readable wherever it is put.
 
     Colour is checked here rather than looked at, because four of these were
     wrong on a page that had been stared at for weeks, and because the states
@@ -111,22 +189,44 @@ def check_palette():
     """
     palettes = _palettes()
     failed = 0
-    for theme, card in CARDS.items():
+    for theme in ("light", "dark"):
         palette = palettes.get(theme) or {}
+        if palette.get("--surface") is None:
+            print("  FAIL  %s theme has no --surface to sit a card on" % theme)
+            failed += 1
+            continue
         for token in TEXT_TOKENS:
             value = palette.get(token)
             if value is None:
                 print("  FAIL  %s theme has no %s" % (theme, token))
                 failed += 1
                 continue
-            seen = _contrast(value, card)
-            if seen < READABLE:
-                print("  FAIL  %s %s is %s, %.2f against %s, needs %.1f"
-                      % (theme, token, value, seen, card, READABLE))
-                failed += 1
+            for ground in _grounds(palette, token, value):
+                if ground is None:
+                    continue
+                seen = _contrast(value, ground)
+                if seen < READABLE:
+                    print("  FAIL  %s %s is %s, %.2f against %s, needs %.1f"
+                          % (theme, token, value, seen, ground, READABLE))
+                    failed += 1
+                    break
+    # The browser paints its own bar on a phone from this, so it has to be
+    # the colour the page opens on rather than one that was right once.
+    light = (palettes.get("light") or {}).get("--bg")
+    tint = re.search(r'<meta name="theme-color" content="(#[0-9a-fA-F]{6})',
+                     PAGE.read_text(encoding="utf-8"))
+    if tint is None:
+        print("  FAIL  the page declares no theme-color")
+        failed += 1
+    elif light is None or tint.group(1).lower() != light.lower():
+        print("  FAIL  theme-color is %s but the page opens on %s"
+              % (tint.group(1), light))
+        failed += 1
+
     if not failed:
         print("  pass  every state word reads at %.1f or better in both themes"
               % READABLE)
+        print("  pass  the browser bar matches the colour the page opens on")
     return 1 if failed else 0
 
 
@@ -237,6 +337,7 @@ def main():
 
     print("\n=== browser script ===")
     results.append(("script", check_scripts()))
+    results.append(("inline", check_inline_script()))
 
     print("\n=== page wiring ===")
     results.append(("wiring", check_element_ids()))

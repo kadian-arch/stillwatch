@@ -238,17 +238,23 @@
   /* ---------- light and dark ---------- */
 
   function theme() {
-    var saved = null;
-    try { saved = localStorage.getItem(THEME_KEY); } catch (error) { saved = null; }
-    if (saved === "light" || saved === "dark") {
-      document.documentElement.dataset.theme = saved;
+    // The head already chose one and wrote it on the root, so there is
+    // nothing to work out here beyond honouring the button.
+    var tint = document.getElementById("tint");
+
+    function paintBrowserChrome() {
+      if (!tint) { return; }
+      var bg = getComputedStyle(document.documentElement)
+        .getPropertyValue("--bg").trim();
+      if (bg) { tint.content = bg; }
     }
+
+    paintBrowserChrome();
     ui.theme.addEventListener("click", function () {
-      var dark = document.documentElement.dataset.theme
-        ? document.documentElement.dataset.theme === "dark"
-        : matchMedia("(prefers-color-scheme: dark)").matches;
-      var next = dark ? "light" : "dark";
+      var next = document.documentElement.dataset.theme === "dark"
+        ? "light" : "dark";
       document.documentElement.dataset.theme = next;
+      paintBrowserChrome();
       try { localStorage.setItem(THEME_KEY, next); } catch (error) { /* private window */ }
     });
   }

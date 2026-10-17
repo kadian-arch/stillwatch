@@ -2,9 +2,16 @@
 
    Bright by default, because the product is a reassurance and not an alarm
    panel. Warm paper underneath, crisp structure on top, and colour reserved
-   entirely for what the house is doing. */
+   entirely for what the house is doing.
+
+   Light is what a first visit gets, whatever the machine prefers. A dark
+   desktop says something about the person's screen, not about what this page
+   is for, and half of everyone who opened it was being shown the quieter of
+   the two themes on that basis alone. Dark is still here and still one click
+   away, and once chosen it is remembered. */
 
 :root {
+  color-scheme: light;
   --bg: #f4efe7;
   --glow: #f0dfc2;
   --surface: #ffffff;
@@ -16,13 +23,13 @@
   --line: rgba(23, 20, 16, 0.11);
   --line-2: rgba(23, 20, 16, 0.06);
 
-  --normal: #047857;
+  --normal: #046a4d;
   --quiet: #1d4ed8;
-  --concern: #b45309;
-  --alert: #be123c;
+  --concern: #974608;
+  --alert: #b31138;
   --away: #6d28d9;
-  --unknown: #6b6460;
-  --settled: #0e7490;
+  --unknown: #645d59;
+  --settled: #0c657d;
 
   --state: var(--normal);
 
@@ -48,50 +55,18 @@
   --ease: cubic-bezier(0.22, 0.75, 0.24, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #121216;
-    --glow: #322519;
-    --surface: #1c1b21;
-    --surface-2: #26252c;
-    --ink: #f4f1ec;
-    --ink-2: #d2ccc4;
-    --muted: #a7a098;
-    --faint: #968f87;
-    --line: rgba(248, 242, 233, 0.14);
-    --line-2: rgba(248, 242, 233, 0.07);
-
-    --normal: #3ad29d;
-    --quiet: #8fbaff;
-    --concern: #ffb544;
-    --alert: #ff7389;
-    --away: #c3a5ff;
-    --unknown: #b9aa9a;
-    --settled: #4fdcf0;
-
-    --shadow:
-      0 1px 1px rgba(0, 0, 0, 0.45),
-      0 4px 14px -4px rgba(0, 0, 0, 0.58),
-      0 22px 48px -22px rgba(0, 0, 0, 0.8);
-    --shadow-up:
-      0 1px 1px rgba(0, 0, 0, 0.5),
-      0 12px 28px -8px rgba(0, 0, 0, 0.68),
-      0 36px 70px -28px rgba(0, 0, 0, 0.9);
-    --lit: inset 0 1px 0 rgba(255, 228, 190, 0.09);
-  }
-}
-
 :root[data-theme="dark"] {
-  --bg: #121216;
+  color-scheme: dark;
+  --bg: #101016;
   --glow: #322519;
   --surface: #1c1b21;
   --surface-2: #26252c;
   --ink: #f4f1ec;
   --ink-2: #d2ccc4;
   --muted: #a7a098;
-  --faint: #968f87;
-  --line: rgba(248, 242, 233, 0.14);
-  --line-2: rgba(248, 242, 233, 0.07);
+  --faint: #9e9891;
+  --line: rgba(248, 242, 233, 0.17);
+  --line-2: rgba(248, 242, 233, 0.11);
 
   --normal: #3ad29d;
   --quiet: #8fbaff;
@@ -109,7 +84,7 @@
     0 1px 1px rgba(0, 0, 0, 0.5),
     0 12px 28px -8px rgba(0, 0, 0, 0.68),
     0 36px 70px -28px rgba(0, 0, 0, 0.9);
-  --lit: inset 0 1px 0 rgba(255, 228, 190, 0.09);
+  --lit: inset 0 1px 0 rgba(255, 233, 204, 0.14);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -234,11 +209,6 @@ ul, ol, dl, dd { margin: 0; padding: 0; list-style: none; }
 :root[data-theme="dark"] .theme .sun,
 :root[data-theme="dark"] .theme .rays { display: none; }
 :root[data-theme="dark"] .theme .moon { display: block; fill: currentColor; stroke: none; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .theme .sun,
-  :root:not([data-theme="light"]) .theme .rays { display: none; }
-  :root:not([data-theme="light"]) .theme .moon { display: block; fill: currentColor; stroke: none; }
-}
 
 .field { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 auto; }
 .field > span { color: var(--faint); font-size: 12.5px; flex: none; }
@@ -733,11 +703,11 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
 
 .msg {
   --u: var(--unknown);
-  border: 1px solid var(--line-2);
+  border: 1px solid color-mix(in srgb, var(--u) 20%, transparent);
   border-left: 2.5px solid var(--u);
   border-radius: var(--r-md);
   padding: 14px 16px;
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--u) 7%, var(--surface-2));
   cursor: pointer;
   transition: box-shadow 0.25s var(--ease), transform 0.25s var(--ease);
 }
@@ -754,7 +724,7 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--u);
-  background: color-mix(in srgb, var(--u) 13%, transparent);
+  background: color-mix(in srgb, var(--u) 10%, transparent);
   padding: 2.5px 8px;
   border-radius: 999px;
 }
