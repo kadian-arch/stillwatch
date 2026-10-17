@@ -5,10 +5,10 @@
    entirely for what the house is doing. */
 
 :root {
-  --bg: #fbfaf8;
-  --glow: #f3ede4;
+  --bg: #f4efe7;
+  --glow: #ecdfc9;
   --surface: #ffffff;
-  --surface-2: #f7f5f1;
+  --surface-2: #f6f2ea;
   --ink: #171410;
   --ink-2: #4a443c;
   --muted: #655f58;
@@ -16,13 +16,13 @@
   --line: rgba(23, 20, 16, 0.11);
   --line-2: rgba(23, 20, 16, 0.06);
 
-  --normal: #0c875d;
-  --quiet: #2563eb;
-  --concern: #9e6c03;
+  --normal: #047857;
+  --quiet: #1d4ed8;
+  --concern: #b45309;
   --alert: #be123c;
-  --away: #7c3aed;
-  --unknown: #78716c;
-  --settled: #07819e;
+  --away: #6d28d9;
+  --unknown: #6b6460;
+  --settled: #0e7490;
 
   --state: var(--normal);
 
@@ -50,64 +50,66 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1013;
-    --glow: #191b22;
-    --surface: #191b21;
-    --surface-2: #20232a;
+    --bg: #0c0f15;
+    --glow: #1a2230;
+    --surface: #171c25;
+    --surface-2: #1f2531;
     --ink: #f2f0ed;
     --ink-2: #c8c4bd;
-    --muted: #98938b;
-    --faint: #888279;
-    --line: rgba(242, 240, 237, 0.13);
-    --line-2: rgba(242, 240, 237, 0.07);
+    --muted: #a39d94;
+    --faint: #948d84;
+    --line: rgba(236, 243, 255, 0.16);
+    --line-2: rgba(236, 243, 255, 0.08);
 
-    --normal: #059669;
-    --quiet: #3b82f6;
-    --concern: #b8860b;
-    --alert: #e7486b;
-    --away: #9368f7;
-    --unknown: #89817c;
-    --settled: #0ea5c4;
+    --normal: #14c88b;
+    --quiet: #7cb0ff;
+    --concern: #f5ab2e;
+    --alert: #ff6b86;
+    --away: #b396ff;
+    --unknown: #a9a39c;
+    --settled: #3ad7ef;
 
     --shadow:
-      0 1px 1px rgba(0, 0, 0, 0.4),
-      0 4px 12px -4px rgba(0, 0, 0, 0.5),
-      0 20px 44px -22px rgba(0, 0, 0, 0.72);
-    --shadow-up:
       0 1px 1px rgba(0, 0, 0, 0.45),
-      0 10px 24px -8px rgba(0, 0, 0, 0.6),
-      0 32px 64px -28px rgba(0, 0, 0, 0.85);
-    --lit: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+      0 4px 14px -4px rgba(0, 0, 0, 0.58),
+      0 22px 48px -22px rgba(0, 0, 0, 0.8);
+    --shadow-up:
+      0 1px 1px rgba(0, 0, 0, 0.5),
+      0 12px 28px -8px rgba(0, 0, 0, 0.68),
+      0 36px 70px -28px rgba(0, 0, 0, 0.9);
+    --lit: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #131417;
-  --glow: #1b1d22;
-  --surface: #1b1d22;
-  --surface-2: #212429;
+  --bg: #0c0f15;
+  --glow: #1a2230;
+  --surface: #171c25;
+  --surface-2: #1f2531;
   --ink: #f2f0ed;
   --ink-2: #c8c4bd;
-  --muted: #98938b;
-  --faint: #888279;
-  --line: rgba(242, 240, 237, 0.13);
-  --line-2: rgba(242, 240, 237, 0.07);
-  --normal: #059669;
-  --quiet: #3b82f6;
-  --concern: #b8860b;
-  --alert: #e7486b;
-  --away: #9368f7;
-  --unknown: #89817c;
-  --settled: #0ea5c4;
+  --muted: #a39d94;
+  --faint: #948d84;
+  --line: rgba(236, 243, 255, 0.16);
+  --line-2: rgba(236, 243, 255, 0.08);
+
+  --normal: #14c88b;
+  --quiet: #7cb0ff;
+  --concern: #f5ab2e;
+  --alert: #ff6b86;
+  --away: #b396ff;
+  --unknown: #a9a39c;
+  --settled: #3ad7ef;
+
   --shadow:
-    0 1px 1px rgba(0, 0, 0, 0.4),
-    0 4px 12px -4px rgba(0, 0, 0, 0.5),
-    0 20px 44px -22px rgba(0, 0, 0, 0.72);
-  --shadow-up:
     0 1px 1px rgba(0, 0, 0, 0.45),
-    0 10px 24px -8px rgba(0, 0, 0, 0.6),
-    0 32px 64px -28px rgba(0, 0, 0, 0.85);
-  --lit: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+    0 4px 14px -4px rgba(0, 0, 0, 0.58),
+    0 22px 48px -22px rgba(0, 0, 0, 0.8);
+  --shadow-up:
+    0 1px 1px rgba(0, 0, 0, 0.5),
+    0 12px 28px -8px rgba(0, 0, 0, 0.68),
+    0 36px 70px -28px rgba(0, 0, 0, 0.9);
+  --lit: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -122,9 +124,11 @@ body {
   min-height: 100vh;
   background: var(--bg);
   background-image:
-    radial-gradient(1100px 520px at 50% -240px,
-      color-mix(in srgb, var(--state) 13%, transparent) 0%, transparent 70%),
-    radial-gradient(760px 400px at 50% -160px, var(--glow) 0%, transparent 72%);
+    radial-gradient(1200px 560px at 50% -230px,
+      color-mix(in srgb, var(--state) 26%, transparent) 0%, transparent 68%),
+    radial-gradient(820px 420px at 50% -150px, var(--glow) 0%, transparent 74%),
+    radial-gradient(900px 700px at 88% 6%,
+      color-mix(in srgb, var(--state) 9%, transparent) 0%, transparent 58%);
   background-attachment: fixed;
   background-repeat: no-repeat;
   color: var(--ink);
@@ -542,10 +546,10 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
 
 .statement {
   font-family: var(--serif);
-  font-size: clamp(26px, 3vw, 41px);
-  line-height: 1.16;
+  font-size: clamp(27px, 3.25vw, 45px);
+  line-height: 1.14;
   font-weight: 400;
-  letter-spacing: -0.021em;
+  letter-spacing: -0.022em;
   color: var(--ink);
   max-width: 21ch;
 }
@@ -614,7 +618,7 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
   font-weight: 600;
 }
 .meter-value {
-  font-size: 30px;
+  font-size: 34px;
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.015em;
@@ -625,11 +629,23 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
    and concern becomes an alert, so the reading is placed against the two
    thresholds rather than against nothing. */
 .dial { position: relative; display: grid; place-items: center; }
-.dial-face { width: 100%; max-width: 230px; display: block; overflow: visible; }
+/* A pool of the state's own colour behind the reading, so the number sits in
+   light rather than floating on a flat panel. */
+.dial::before {
+  content: "";
+  position: absolute;
+  width: 74%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    color-mix(in srgb, var(--state) 17%, transparent) 0%, transparent 68%);
+  pointer-events: none;
+}
+.dial-face { width: 100%; max-width: 252px; display: block; overflow: visible; }
 .dial-bed,
 .dial-fill {
   fill: none;
-  stroke-width: 9;
+  stroke-width: 13;
   stroke-linecap: round;
 }
 .dial-bed { stroke: var(--surface-2); }
@@ -638,7 +654,9 @@ select:hover { border-color: color-mix(in srgb, var(--ink) 26%, transparent); }
   stroke-dasharray: 254.5;
   stroke-dashoffset: 254.5;
   transition: stroke-dashoffset 0.75s var(--ease), stroke 0.5s var(--ease);
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--state) 38%, transparent));
+  filter:
+    drop-shadow(0 0 7px color-mix(in srgb, var(--state) 55%, transparent))
+    drop-shadow(0 0 22px color-mix(in srgb, var(--state) 26%, transparent));
 }
 .dial-ticks line {
   stroke: var(--ink);
