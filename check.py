@@ -153,6 +153,77 @@ def replay_days():
     return 0
 
 
+
+def check_entry_points():
+    """The two ways of starting the service must build the same thing.
+
+    Written after a real miss. A reporter was added to the command line
+    `serve`, every test passed, and production reported nothing for a day
+    because the Procfile runs `gunicorn wsgi:app` and that file builds its own
+    watcher. A second look found the reverse as well: the command line was not
+    giving the watcher a narrator, so running locally exercised different
+    wording from the server.
+
+    Neither was a logic error and no test could have caught either, because
+    each path was correct on its own. Only comparing them finds it.
+    """
+    import ast
+
+    def keywords(path, name):
+        tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == name):
+                return {k.arg for k in node.keywords if k.arg}
+        return None
+
+    production = ROOT / "wsgi.py"
+    command_line = ROOT / "stillwatch" / "stillwatch" / "cli.py"
+
+    failed = 0
+    for name in ("create_app", "LiveWatcher"):
+        here = keywords(production, name)
+        there = keywords(command_line, name)
+        if here is None or there is None:
+            print("  FAIL  %s is not built in both places" % name)
+            failed += 1
+            continue
+        if here != there:
+            missing = sorted(here - there) or sorted(there - here)
+            where = "the serve command" if here - there else "wsgi.py"
+            print("  FAIL  %s differs: %s does not pass %s"
+                  % (name, where, ", ".join(missing)))
+            failed += 1
+        else:
+            print("  pass  %s is built the same way in both" % name)
+
+    # Every setting the code reads should be written down somewhere a person
+    # deploying this would look.
+    import re
+
+    read = set()
+    for path in ROOT.rglob("*.py"):
+        if "test" in path.name or ".git" in str(path):
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        read.update(re.findall(r"environ\.get\(\"(STILLWATCH_[A-Z_]+)\"", text))
+
+    written = ""
+    for doc in (ROOT / "wsgi.py", ROOT / "docs" / "DEPLOY.md", ROOT / "README.md",
+                ROOT / "docs" / "SECURITY.md"):
+        if doc.exists():
+            written += doc.read_text(encoding="utf-8", errors="replace")
+
+    undocumented = sorted(v for v in read if v not in written)
+    if undocumented:
+        print("  FAIL  settings read but documented nowhere: %s"
+              % ", ".join(undocumented))
+        failed += 1
+    else:
+        print("  pass  all %d settings the code reads are documented" % len(read))
+
+    return 1 if failed else 0
+
 def main():
     if replay_days():
         print("\ncould not generate the recorded days")
@@ -169,6 +240,9 @@ def main():
 
     print("\n=== page wiring ===")
     results.append(("wiring", check_element_ids()))
+
+    print("\n=== entry points ===")
+    results.append(("entries", check_entry_points()))
 
     print("\n=== colour ===")
     results.append(("colour", check_palette()))

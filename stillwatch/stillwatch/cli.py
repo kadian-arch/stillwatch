@@ -621,10 +621,15 @@ def cmd_serve(args):
     watcher = None
     if args.live and args.notify:
         from .metrics import reporter_from_env
+        from .narrate import narrator_from_env
         from .watch import LiveWatcher
 
         reporter = reporter_from_env()
+        # Everything production gives the watcher, this gives it too. Running
+        # locally has to exercise the same thing that runs on the server, or
+        # the rehearsal is of a different product.
         watcher = LiveWatcher(store, args.person, channels,
+                              narrator=narrator_from_env(),
                               reporter=reporter).start()
         print("  watching for silence, telling: %s" % ", ".join(watcher.channels))
         if reporter is not None:
