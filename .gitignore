@@ -17,4 +17,7 @@ docs/CONSTRAINTS.md
 docs/JOURNAL.md
 
 # Local editor and tooling config
+.vscode/
+.idea/
 .claude/
+*.code-workspace

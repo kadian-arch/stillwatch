@@ -601,8 +601,14 @@ def _maybe_settle(reading, answered):
 
 
 def walk(events, baseline, roster, start, end, step_minutes=15,
-         last_contact=None, answered=None):
-    """Assess repeatedly across a span, which is what a running service does."""
+         last_contact=None, answered=None, final=None):
+    """Assess repeatedly across a span, which is what a running service does.
+
+    `final` adds one more assessment at a moment of its own, after the last
+    stride. A day being drawn wants an even grid. A day still happening also
+    wants the present, which almost never lands on the grid, and without it
+    the page reports a time up to one stride behind the clock.
+    """
     events = events if isinstance(events, Timeline) else Timeline(events, roster)
     readings = []
     moment = start
@@ -611,6 +617,9 @@ def walk(events, baseline, roster, start, end, step_minutes=15,
         readings.append(assess(events, baseline, roster, moment,
                                last_contact=last_contact, answered=answered))
         moment += step
+    if final is not None and (not readings or readings[-1].at < final):
+        readings.append(assess(events, baseline, roster, final,
+                               last_contact=last_contact, answered=answered))
     return readings
 
 

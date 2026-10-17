@@ -48,6 +48,9 @@ start. That distinction is the product.
   in a sentence written by Amazon Bedrock from facts the engine already settled.
 - Reports its own pulse outward to Amazon CloudWatch, so that a service which
   has quietly died raises an alarm instead of looking like a quiet house.
+- Asks itself the same question from outside, every five minutes, with an AWS
+  Lambda function on Amazon EventBridge, because a deployment can be perfectly
+  healthy while the site is unreachable.
 - Never looks at anyone. No video analysis, by design.
 
 ## Repository
@@ -108,10 +111,11 @@ python -m stillwatch serve --live --db events.db --person Margarette
 python check.py
 ```
 
-Twelve test suites, plus three static checks on the page and its palette.
-The detection rules are judged against whole days that must
-alert and days that must not, every five minutes from midnight to midnight,
-because a false alarm that lasts five minutes still wakes somebody up.
+Twelve test suites, plus five static checks on the page, its palette and the
+two ways of starting the service. The detection rules are judged against whole
+days that must alert and days that must not, every five minutes from midnight
+to midnight, because a false alarm that lasts five minutes still wakes
+somebody up.
 
 | The day | What it must decide | |
 |---|---|---|
@@ -145,7 +149,11 @@ the parts a test suite usually misses and this one did not:
 | Nobody can answer for a household without signing in | pass |
 | The health endpoint does not say whether the house is occupied | pass |
 | Every id the page script reaches for exists in the page | pass |
-| Every state is readable as text in both themes | pass |
+| Every state is readable on every surface it lands on, in both themes | pass |
+| The page carries no script the content policy would silently refuse | pass |
+| Both ways of starting the service build the same thing | pass |
+| Every setting the code reads is written down somewhere | pass |
+| A day still happening reports the present, not the last five minute mark | pass |
 | The commands run from the folder people actually run them from | pass |
 
 The delivery suite is there because order independence is a claim, and a claim
@@ -259,6 +267,19 @@ The friction log and the product feedback are written for the teams whose
 tools are used here. Each entry states what was attempted, what happened, how
 much it cost, and what would have helped.
 
+## Contributing
+
+The most useful thing anyone can send is a household this reads wrongly.
+[CONTRIBUTING.md](CONTRIBUTING.md) says how to run it, what help is most
+wanted, and the five things that have to stay true whatever else changes.
+Everyone taking part is held to the
+[code of conduct](CODE_OF_CONDUCT.md).
+
+Vulnerabilities go through GitHub's private security advisories rather than a
+public issue.
+
 ## Licence
 
-Apache 2.0. See [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](LICENSE). The event simulator is MIT, so it can be
+used by anyone building against Ring without taking on this repository's
+terms.

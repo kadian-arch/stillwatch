@@ -23,6 +23,14 @@
   --line: rgba(23, 20, 16, 0.11);
   --line-2: rgba(23, 20, 16, 0.06);
 
+  /* Paper darkens where the tooth catches, so the grain multiplies. The
+     counter-light is cool against the warm wash above it, and the floor is
+     the paper's own colour deepened rather than a grey laid over it. */
+  --grain: 0.055;
+  --grain-blend: multiply;
+  --counter: rgba(142, 160, 178, 0.3);
+  --floor: rgba(126, 104, 78, 0.14);
+
   --normal: #046a4d;
   --quiet: #1d4ed8;
   --concern: #974608;
@@ -68,6 +76,13 @@
   --line: rgba(248, 242, 233, 0.17);
   --line-2: rgba(248, 242, 233, 0.11);
 
+  /* In the dark the tooth is what little light there is catching, so it
+     lifts rather than darkens, and it has to be stronger to be seen at all. */
+  --grain: 0.1;
+  --grain-blend: overlay;
+  --counter: rgba(86, 104, 140, 0.22);
+  --floor: rgba(0, 0, 0, 0.42);
+
   --normal: #3ad29d;
   --quiet: #8fbaff;
   --concern: #ffb544;
@@ -103,7 +118,9 @@ body {
       color-mix(in srgb, var(--state) 26%, transparent) 0%, transparent 68%),
     radial-gradient(820px 420px at 50% -150px, var(--glow) 0%, transparent 74%),
     radial-gradient(900px 700px at 88% 6%,
-      color-mix(in srgb, var(--state) 9%, transparent) 0%, transparent 58%);
+      color-mix(in srgb, var(--state) 9%, transparent) 0%, transparent 58%),
+    radial-gradient(760px 620px at -8% 78%, var(--counter) 0%, transparent 62%),
+    linear-gradient(to bottom, transparent 42%, var(--floor) 100%);
   background-attachment: fixed;
   background-repeat: no-repeat;
   color: var(--ink);
@@ -113,6 +130,27 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   transition: background-color 0.5s var(--ease);
+}
+
+/* Paper tooth. Bled past the edges so the fixed layer never shows a seam,
+   and inert, so it cannot catch a click meant for the page. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -5%;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='170' height='170'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='170' height='170' filter='url(%23g)'/%3E%3C/svg%3E");
+  opacity: var(--grain);
+  mix-blend-mode: var(--grain-blend);
+}
+
+/* Everything the page actually says belongs above the tooth. The header
+   already stands clear of it on its own layer. */
+.wrap, .aside, .foot { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: no-preference) {
+  body::before { transition: opacity 0.5s var(--ease); }
 }
 
 h1, h2, h3 { margin: 0; font-weight: 550; letter-spacing: -0.012em; }

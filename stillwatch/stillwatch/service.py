@@ -279,7 +279,8 @@ def build_day(source, key, on=None, confirmed=(), answers=(), last_contact=None)
         last = min(last, now)
     readings = walk(events, baseline, roster, midnight, last, STEP_MINUTES,
                     last_contact=last_contact if is_today else None,
-                    answered=said.get)
+                    answered=said.get,
+                    final=now if is_today else None)
 
     views = []
     for reading in readings:

@@ -518,6 +518,36 @@ def test_how_often_an_ordinary_day_cries_wolf():
           len(noisy) <= 1, "%d of 6 were: %s" % (len(noisy), noisy))
 
 
+def test_a_day_still_happening_ends_at_the_present():
+    section("the newest reading is the moment asked for, not the last stride")
+    stream, baseline, target, _ = prepared("fall")
+
+    # 10:04 is deliberately off the grid. The strides land on 10:00 and then
+    # 10:05, so without being told otherwise the walk stops at 10:00 and the
+    # page reports a time four minutes behind the clock.
+    now = at(target, 10, 4)
+    grid = walk(stream, baseline, roster(), at(target, 0), now, 5)
+    check("without it the walk stops short",
+          grid[-1].at == at(target, 10, 0),
+          "stopped at %s" % grid[-1].at)
+
+    live = walk(stream, baseline, roster(), at(target, 0), now, 5, final=now)
+    check("with it the last reading is the present",
+          live[-1].at == now, "ended at %s" % live[-1].at)
+    check("and the even grid underneath is untouched",
+          [r.at for r in live[:-1]] == [r.at for r in grid],
+          "the strides changed")
+
+    # Asking for a moment the grid already covers must not double it up,
+    # because the chart draws one run per reading.
+    on_grid = at(target, 10, 0)
+    tidy = walk(stream, baseline, roster(), at(target, 0), on_grid, 5,
+                final=on_grid)
+    check("a present that is already on the grid is not repeated",
+          len(tidy) == len(set(r.at for r in tidy)),
+          "%d readings, %d distinct" % (len(tidy), len(set(r.at for r in tidy))))
+
+
 def main():
     for test in (
         test_expectations_hold,
@@ -540,6 +570,7 @@ def main():
         test_an_ordinary_day_is_never_worth_a_phone_call,
         test_how_often_an_ordinary_day_cries_wolf,
         test_reasons_read_like_written_english,
+        test_a_day_still_happening_ends_at_the_present,
     ):
         test()
 

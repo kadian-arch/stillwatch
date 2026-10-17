@@ -341,6 +341,73 @@ metric that has not arrived yet.
 
 ---
 
+## AWS Lambda and Amazon EventBridge
+
+**Used for:** the one check that cannot be made from inside. A scheduled
+function calls the public health endpoint over the ordinary internet and
+publishes what it found to CloudWatch, so a deployment that is perfectly
+healthy while the site is unreachable is still caught.
+
+**Run against the live service.** `stillwatch-outside-check` runs on the
+Python 3.12 runtime, on an EventBridge schedule of five minutes, and publishes
+`SiteReachable`, `SiteAnswered`, `SiteStoreOk` and `SiteLatencyMs`. An alarm on
+`SiteReachable` reaches the operations topic.
+
+**Why it earns its place.** Every other guard here shares fate with the thing
+it guards. The in-process watchdog runs in the same deployment. The heartbeat
+is published outward from the same dyno. Both go quiet together when the dyno
+does, which is the case they were built for and which an alarm on missing data
+catches. None of them can see an expired certificate, a DNS change or a router
+that stopped sending traffic to the right place, because from the inside
+nothing is wrong. Only a request from outside finds that, and Lambda is the
+cheapest honest way to make one every five minutes.
+
+**Onboarding, from zero to a scheduled run.** Around twenty five minutes. No
+packaging was needed, because `urllib` and `boto3` are both already on the
+runtime, so the function is one file pasted into the console. EventBridge took
+a single rule.
+
+### What got in the way
+
+**The default timeout is three seconds, and nothing relates it to what you are
+calling.** The service it checks sits on a dyno that sleeps. A warm response
+measured between 0.8 and 1.8 seconds, a cold one 10.1. At the default, every
+check landing on a sleeping dyno would have reported the site unreachable and
+raised an alarm about a site that was fine. The timeout here is ten seconds
+for that reason. Nothing in the console suggests the question, and the
+resulting failure is the expensive kind: an alarm that is wrong often enough
+to be ignored, protecting the thing you most need to hear about.
+
+**The handler setting and the file name have to be guessed together.** Lambda
+defaults to `lambda_function.lambda_handler`, which encodes both a file name
+and a function name. A file called anything else, with a function called
+anything else, fails at import, and the failure does not say which of the two
+halves it could not find. This function keeps `lambda_handler = handler` at
+the bottom purely so that pasting it in under any file name works.
+
+**Permission to publish a metric is not where permission to log is.** The role
+wizard offers the logging policy as a matter of course, since every function
+writes logs. Publishing a metric needs `cloudwatch:PutMetricData` added
+separately, and a function missing it runs green, logs nothing unusual and
+publishes nothing. The metric simply never appears, and the obvious suspect is
+the code.
+
+**Two products answer to the same name.** EventBridge Scheduler and
+EventBridge Rules both run a function on a schedule, both are reached from the
+EventBridge console, and the documentation for one is reachable from the
+other. Either works here. Neither page says plainly which one a new schedule
+should use or what is different about the other.
+
+**Would you build with it again? Yes.** An outside check is worth more than
+its size suggests, and this one is about a hundred lines with no dependencies
+and no build. The whole arrangement costs nothing at this volume.
+
+**What would change the most:** put the timeout on the first screen with a
+word about what it should exceed, and make the import failure name the part it
+could not resolve.
+
+---
+
 ## AWS account onboarding, which is not a tool but shaped everything
 
 **What happens.** AWS does not accept virtual cards, which is a documented and
@@ -376,12 +443,14 @@ all in the same place, which is the path a developer without hardware has to
 walk. A device type field and a sandbox that can fire an event would between
 them remove most of what is in the friction log.
 
-Amazon SNS, Amazon Bedrock and Amazon CloudWatch are all straightforward to
-build against and well suited to this product, and all three run in
-production: notifications are published to a topic caregivers subscribe
-themselves to, the opening sentence of every message is written by Nova Lite,
-and the service publishes its own pulse outward so that an alarm on missing
-data can catch the one failure nothing inside the deployment can report.
+Amazon SNS, Amazon Bedrock, Amazon CloudWatch, AWS Lambda and Amazon
+EventBridge are all straightforward to build against and well suited to this
+product, and all five run in production: notifications are published to a
+topic caregivers subscribe themselves to, the opening sentence of every
+message is written by Nova Lite, the service publishes its own pulse outward
+so that an alarm on missing data can catch a judge that has stopped, and a
+scheduled function asks the site the same question a visitor would, from
+outside, every five minutes.
 
 Their rough edges are not in the APIs. SNS asks for an ARN in one place and a
 topic name in another without saying they are the same thing. Bedrock returns
@@ -389,8 +458,9 @@ one error, `Operation not allowed`, for at least four unrelated faults, and the
 API whose purpose is to report whether a model may be used reported a region
 as authorised and available where the runtime then refused it. CloudWatch
 buries the one setting that makes an absence alarmable, and will not let the
-alarm be built before the first metric arrives. All three are described above
-with the exact calls and responses.
+alarm be built before the first metric arrives. Lambda defaults to a three second timeout
+against whatever you point it at, which here would have alarmed on every cold
+start. All of them are described above with the exact calls and responses.
 
 ---
 
@@ -555,3 +625,32 @@ one, and say in the console that a confirmation link expires.
 **Why it matters to us.** For this product an unconfirmed subscriber is a
 caregiver who will never be told, which is indistinguishable from working until
 the day it matters. That deserves to be louder than one column of small text.
+
+### AWS Lambda: put the timeout on the first screen, with what it should exceed
+
+**Priority: Important.**
+
+**What.** Show the timeout at creation rather than under Configuration, with a
+line saying it has to exceed the slowest response the function will wait for.
+
+**Why it matters to us.** Our function checks a site from outside. A warm
+response is under two seconds and a cold one is ten, so at the three second
+default every check landing on a sleeping deployment would have reported the
+site unreachable. The alarm would have been wrong several times a day, and an
+alarm that is wrong several times a day is one people stop reading. The
+failure is not that the function breaks, it is that the safety net quietly
+becomes noise, and nothing at creation time raises the question.
+
+### AWS Lambda: say which half of the handler setting could not be resolved
+
+**Priority: Nice-to-have.**
+
+**What.** When the handler cannot be imported, name whether it was the module
+or the function that was not found.
+
+**Why it matters to us.** The default is `lambda_function.lambda_handler`,
+which encodes a file name and a function name in one field. Anything else
+fails at import without saying which half was wrong, so the fix is guessed.
+Our function carries an alias at the bottom purely so that pasting it in under
+any file name works, which is a workaround for an error message rather than
+for a limitation.
