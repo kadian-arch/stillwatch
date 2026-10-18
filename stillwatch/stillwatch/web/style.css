@@ -1326,6 +1326,25 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.14); }
 .gate-form .cta { flex: 0 0 auto; }
 .gate-form .cta[disabled] { opacity: 0.55; cursor: progress; }
 
+/* On a phone the gate was the entire first screen, so somebody arriving saw
+   a locked door and had to scroll to find out there was anything behind it.
+   The recorded days are open to everyone, and they are the point. Compacted
+   so the dashboard starts above the fold. */
+@media (max-width: 879px) {
+  .gate { padding: 17px; gap: 11px; }
+  .gate-say h2 { font-size: 17.5px; }
+  .gate-say p { margin-top: 5px; font-size: 13px; }
+  .gate-form { gap: 9px; }
+  .gate-field { flex: 1 1 calc(50% - 5px); }
+  .gate-form .cta { flex: 1 1 100%; }
+  /* The standing note repeats the paragraph above it, so it is out of the
+     way until the gate has something of its own to say. A refused passcode
+     is written here, and that must never be the thing that gets hidden. */
+  .gate-note { display: none; }
+  .gate[data-said] .gate-note { display: block; }
+}
+
+
 .gate-note {
   color: var(--muted);
   font-size: 12.6px;

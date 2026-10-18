@@ -261,9 +261,17 @@
 
   /* ---------- loading ---------- */
 
+  // Anything written here is the gate answering for itself: a refusal, a
+  // reason, a failure to connect. Marking it keeps it on screen at every
+  // width, including the one where the standing note is folded away.
+  function sayAtTheGate(words) {
+    ui.gateNote.textContent = words;
+    ui.gate.dataset.said = "1";
+  }
+
   function showGate(why) {
     ui.gate.hidden = false;
-    if (why) { ui.gateNote.textContent = why; }
+    if (why) { sayAtTheGate(why); }
   }
 
   function paintWho() {
@@ -277,7 +285,7 @@
         + " household is put behind it."));
     }
     if (session.locked && !session.name) {
-      ui.gateNote.textContent = MODE_WORDS[session.mode] || MODE_WORDS.shared;
+      sayAtTheGate(MODE_WORDS[session.mode] || MODE_WORDS.shared);
     }
     ui.who.hidden = !(session.locked && session.name);
     if (session.name) {
@@ -303,7 +311,7 @@
       ui.gateGo.disabled = false;
       ui.gateGo.textContent = "Sign in";
       if (!result.ok) {
-        ui.gateNote.textContent = result.body.error || "That did not work.";
+        sayAtTheGate(result.body.error || "That did not work.");
         ui.gateName.focus();
         ui.gatePass.value = "";
         ui.gatePass.focus();
@@ -317,7 +325,7 @@
     }).catch(function () {
       ui.gateGo.disabled = false;
       ui.gateGo.textContent = "Sign in";
-      ui.gateNote.textContent = "Could not reach Stillwatch. Try again.";
+      sayAtTheGate("Could not reach Stillwatch. Try again.");
     });
   }
 
