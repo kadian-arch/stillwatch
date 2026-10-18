@@ -328,14 +328,23 @@ def test_answering_the_alarm_the_dashboard_is_showing():
     # with a quiet night in it makes this test pass by day and fail at three in
     # the morning, depending on which hour the silence happens to begin in.
     now = datetime.now(timezone.utc)
+    quiet_since = now - timedelta(hours=6)
     events = []
     for day in range(14, 0, -1):
         midnight = (now - timedelta(days=day)).replace(
             hour=0, minute=0, second=0, microsecond=0)
         for step in range(24 * 3):
+            moment = midnight + timedelta(minutes=20 * step)
+            # Nothing may be seeded after the silence is supposed to start.
+            # Run this before six in the morning and `quiet_since` lands in
+            # yesterday, where the history is still laying down movement every
+            # twenty minutes, so the newest event is yesterday evening and the
+            # silence under test is half an hour rather than six hours. That is
+            # close enough to the threshold to pass or fail on the minute.
+            if moment >= quiet_since:
+                continue
             events.append(Event("seed-%d-%d" % (day, step), "kitchen", MOTION,
-                                midnight + timedelta(minutes=20 * step)))
-    quiet_since = now - timedelta(hours=6)
+                                moment))
     events.append(Event("last", "kitchen", MOTION, quiet_since))
     store.add_many(events)
 

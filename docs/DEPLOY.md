@@ -188,6 +188,26 @@ python feed.py --catch-up --since 2026-09-26
 Nothing can be doubled up by this. Everything in that stretch is posted again
 and everything already stored is refused on its id.
 
+### Letting a demonstration household genuinely go quiet
+
+```bash
+python feed.py --catch-up --still-until 2026-10-18T22:30
+```
+
+Posts the camera reports and withholds the movement, so the house goes quiet
+while the cameras stay online. That is the state the product exists to read: a
+silence it has reason to trust, rather than a feed that stopped.
+
+The time at the end is when the withholding stops, in UTC. After it passes,
+the next run lets the household move again and the state climbs back down on
+its own, leaving the silence in the record as the silence it was.
+
+Give it a deadline rather than using the bare `--still`, which holds the quiet
+for as long as the job runs. A scheduled task that only ends when somebody
+remembers to go and end it will one day not be remembered, and the result is a
+monitoring service sitting in alarm with nobody watching. The deadline costs
+nothing and removes the step.
+
 ## The recorded days
 
 ```

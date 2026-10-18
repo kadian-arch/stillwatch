@@ -7,11 +7,13 @@ Where something got in the way, the detail is in
 [FRICTION_LOG.md](FRICTION_LOG.md) with the date it happened. This document is
 the considered view: what worked, what did not, and what would change it.
 
-One thing is stated plainly up front, because it shapes everything below.
-**Ring hardware is not sold in the country this was built in, and could not be
-imported within the time available.** Every section below says which parts ran
-against the live service and which were exercised against a stand-in, and the
-Ring integration is the one place where that distinction matters most.
+One finding shapes everything below, and it is the most useful thing in this
+document for the Ring team. **Ring is not sold in the country this was built
+in**, so the entire product was built through the developer tooling alone.
+That is the case the tooling exists to serve, and it is the case it currently
+serves least well: two of the friction log's eleven entries are about nothing
+else. Every section below says which parts ran against the live service and
+which ran against a stand-in.
 
 ---
 

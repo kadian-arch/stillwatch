@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -138,9 +139,57 @@ def test_an_ordinary_catch_up_still_moves_her():
         server.shutdown()
 
 
+def test_a_deadline_holds_the_house_quiet_and_then_lets_go():
+    section("withheld movement ends on its own")
+
+    later = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+    earlier = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+
+    server, url = serve()
+    try:
+        del RECEIVED[:]
+        with tempfile.TemporaryDirectory() as folder:
+            code, out = feed("--catch-up", "--still-until", later, "--url", url,
+                             "--db", str(Path(folder) / "events.db"))
+        check("before the deadline it runs", code == 0, out.strip()[-200:])
+        check("before the deadline nobody moves",
+              kinds() == {"device_online"}, str(kinds()))
+        check("and it says when it will stop",
+              "without being edited again" in out, out.strip()[-200:])
+
+        del RECEIVED[:]
+        with tempfile.TemporaryDirectory() as folder:
+            code, out = feed("--catch-up", "--still-until", earlier, "--url", url,
+                             "--seed-days", "2",
+                             "--db", str(Path(folder) / "events.db"))
+        check("after the deadline it runs", code == 0, out.strip()[-200:])
+        # The whole purpose. A job left on this setting has to put the house
+        # back by itself, because the failure it prevents is a monitoring
+        # product sitting in alarm for a fortnight with nobody watching.
+        check("after the deadline she moves again",
+              "motion_detected" in kinds(), str(kinds()))
+        check("and it says the quiet is over",
+              "set to end" in out, out.strip()[-200:])
+    finally:
+        server.shutdown()
+
+    server, url = serve()
+    try:
+        del RECEIVED[:]
+        with tempfile.TemporaryDirectory() as folder:
+            code, out = feed("--catch-up", "--still-until", "not a time",
+                             "--url", url,
+                             "--db", str(Path(folder) / "events.db"))
+        check("a deadline it cannot read is refused rather than ignored",
+              code != 0 and "YYYY-MM-DD" in out, out.strip()[-200:])
+    finally:
+        server.shutdown()
+
+
 def main():
     for test in (test_a_still_house_still_has_cameras,
-                 test_an_ordinary_catch_up_still_moves_her):
+                 test_an_ordinary_catch_up_still_moves_her,
+                 test_a_deadline_holds_the_house_quiet_and_then_lets_go):
         test()
 
     print("\n%d checks passed, %d failed" % (PASSED, len(FAILED)))

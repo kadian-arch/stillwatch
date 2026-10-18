@@ -20,6 +20,14 @@ stand in for.
     python feed.py --no-seed               just run forward from now
     python feed.py --speed 60              an hour of household time a minute
 
+A scheduled catch-up keeps a deployed household fed:
+
+    python feed.py --catch-up                      post whatever is due, exit
+    python feed.py --catch-up --still-until T      quiet until T, then normal
+
+The second is how a genuine escalation is produced on a running service. It
+needs no second visit, because the moment it stops is written into the job.
+
 Stop it with Ctrl+C. Run it again and nothing is duplicated, because every
 event carries a stable id.
 """
@@ -56,6 +64,12 @@ WIRE_KIND = {
 
 CHUNK = 400
 TICK_SECONDS = 20
+
+# When withheld movement is released, the house wakes from a few minutes ago
+# rather than from wherever the quiet began. Backfilling the whole silence
+# would paint movement over a stretch that genuinely had none, and that
+# stretch is a real part of this household's history.
+WAKE_WINDOW = timedelta(minutes=20)
 
 # A webhook is not a file. Ring redelivers anything it is not certain arrived,
 # deliveries overtake each other, and a camera on a weak link misses some
@@ -213,6 +227,11 @@ def main():
                              "goes quiet while the cameras stay online. This is the "
                              "difference the product exists to tell: an unreachable "
                              "camera is not a person who has stopped moving.")
+    parser.add_argument("--still-until", default="",
+                        help="Hold the house quiet only until this UTC moment, as "
+                             "YYYY-MM-DDTHH:MM, then resume on its own. For a "
+                             "scheduled job, so that the quiet ends whether or not "
+                             "anybody remembers to go back and end it.")
     parser.add_argument("--from-now", action="store_true",
                         help="Catch up from this moment rather than from the last "
                              "movement, leaving the gap as the gap it was.")
@@ -245,7 +264,27 @@ def main():
         last = EventStore(args.db).last_event_at(kinds=("motion", "ding"))
         now = datetime.now(timezone.utc)
 
-        if args.still:
+        # A deadline the job carries beats a deadline somebody has to remember.
+        holding = args.still
+        if args.still_until:
+            try:
+                ends = datetime.fromisoformat(args.still_until)
+            except ValueError:
+                sys.exit("--still-until wants YYYY-MM-DDTHH:MM in UTC, "
+                         "for example 2026-10-18T22:30")
+            if ends.tzinfo is None:
+                ends = ends.replace(tzinfo=timezone.utc)
+            holding = now < ends
+            if not holding:
+                print("\nthe quiet was set to end at %s, and has"
+                      % ends.strftime("%d %b %H:%M"))
+                if last is not None and last < now - WAKE_WINDOW:
+                    print("  letting her move again from %s, and leaving the "
+                          "silence in the record" % (now - WAKE_WINDOW)
+                          .strftime("%d %b %H:%M"))
+                    last = now - WAKE_WINDOW
+
+        if holding:
             # Only the cameras speak. Nobody moves. The dashboard has every
             # reason to believe the house is being watched, which is the whole
             # point: a silence it can trust is the one worth acting on.
@@ -256,6 +295,9 @@ def main():
                   % (sent, from_moment.strftime("%d %b %H:%M"),
                      now.strftime("%d %b %H:%M")))
             print("  movement withheld, so the quiet is real as far as the house knows")
+            if args.still_until:
+                print("  ending at %s, without being edited again"
+                      % ends.strftime("%d %b %H:%M"))
             return 0
 
         if args.from_now:

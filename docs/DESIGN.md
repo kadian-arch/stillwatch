@@ -80,9 +80,10 @@ Tuesday" is actionable. A confidence score from a model nobody can interrogate
 is not. In caretaking, explainability is a product requirement, not a
 nice-to-have.
 
-Frequency baselines and gap percentiles are simple, they work on the amount of
-history we can realistically get, and every alert can state its own reasoning in
-one sentence.
+Frequency baselines and gap percentiles answer that requirement directly.
+They work on the history a real household actually produces, they hold up on
+one person's few weeks rather than needing a population, and every alert states
+its own reasoning in a sentence.
 
 ## Escalation
 

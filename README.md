@@ -186,7 +186,7 @@ benefit of the doubt.
 | `GET /v1/devices`, real JSON:API envelope parsed | yes | n/a |
 | Device capabilities relationship | yes | n/a |
 | Event history endpoint | called; returns zero events for a sandbox device | fixtures |
-| Motion and doorbell events delivered to the webhook | **no. The Playground cannot fire one** | yes, signed with the real HMAC key |
+| Motion and doorbell events delivered to the webhook | the Playground has no way to fire one | yes, signed with the real HMAC key |
 
 The gap in the last row is Ring's, not a shortcut here: the Developers
 Playground simulates a live view session, with the WHEP and SDP exchange for a
